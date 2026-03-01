@@ -1,6 +1,5 @@
 package com.squarenova.emaanwallpapers.ui.splash
 
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,13 +9,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import com.squarenova.emaanwallpapers.R
@@ -34,7 +33,7 @@ fun SplashScreen(navController: NavController) {
 
         alphaAnim.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 1200)
+            animationSpec = tween(1200)
         )
 
         delay(1200)
@@ -49,7 +48,7 @@ fun SplashScreen(navController: NavController) {
                 }
             }
 
-            !profileCompleted -> {
+            loggedIn && !profileCompleted -> {
                 navController.navigate("profile_setup") {
                     popUpTo("splash") { inclusive = true }
                 }
@@ -88,7 +87,6 @@ fun SplashScreen(navController: NavController) {
             Text(
                 text = "Emaan Wallpapers",
                 fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
                 color = Color.White
             )
 

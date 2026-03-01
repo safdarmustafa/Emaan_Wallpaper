@@ -1,3 +1,6 @@
+# ==============================
+# Android Studio / IntelliJ
+# ==============================
 *.iml
 .gradle
 /local.properties
@@ -7,9 +10,39 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
-.DS_Store
+
+# ==============================
+# Build Files
+# ==============================
 /build
+/app/build
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
+# ==============================
+# Mac / Windows
+# ==============================
+.DS_Store
+Thumbs.db
+
+# ==============================
+# Logs
+# ==============================
+*.log
+
+# ==============================
+# Firebase (IMPORTANT)
+# ==============================
+google-services.json
+
+# ==============================
+# Keystore (VERY IMPORTANT)
+# ==============================
+*.jks
+*.keystore
+
+# ==============================
+# Kotlin / Misc
+# ==============================
+out/

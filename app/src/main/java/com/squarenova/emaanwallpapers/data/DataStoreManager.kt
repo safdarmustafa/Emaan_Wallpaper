@@ -16,7 +16,6 @@ class DataStoreManager(private val context: Context) {
         val IS_PROFILE_COMPLETED = booleanPreferencesKey("is_profile_completed")
     }
 
-    // Save login after OTP verification
     suspend fun saveLogin(phone: String) {
         context.dataStore.edit { prefs ->
             prefs[IS_LOGGED_IN] = true
@@ -24,25 +23,24 @@ class DataStoreManager(private val context: Context) {
         }
     }
 
-    // Mark profile completed after profile insert
     suspend fun setProfileCompleted() {
         context.dataStore.edit { prefs ->
             prefs[IS_PROFILE_COMPLETED] = true
         }
     }
 
-    val isLoggedIn: Flow<Boolean> = context.dataStore.data
-        .map { prefs ->
+    val isLoggedIn: Flow<Boolean> =
+        context.dataStore.data.map { prefs ->
             prefs[IS_LOGGED_IN] ?: false
         }
 
-    val isProfileCompleted: Flow<Boolean> = context.dataStore.data
-        .map { prefs ->
+    val isProfileCompleted: Flow<Boolean> =
+        context.dataStore.data.map { prefs ->
             prefs[IS_PROFILE_COMPLETED] ?: false
         }
 
-    val phoneNumber: Flow<String?> = context.dataStore.data
-        .map { prefs ->
+    val phoneNumber: Flow<String?> =
+        context.dataStore.data.map { prefs ->
             prefs[PHONE_NUMBER]
         }
 

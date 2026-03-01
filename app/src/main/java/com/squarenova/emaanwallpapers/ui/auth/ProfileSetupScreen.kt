@@ -1,6 +1,5 @@
 package com.squarenova.emaanwallpapers.ui.auth
 
-import io.github.jan.supabase.postgrest.postgrest
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
@@ -23,11 +22,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.network.SupabaseClient
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.firstOrNull
+import com.squarenova.emaanwallpapers.network.FirebaseClient
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +38,7 @@ fun ProfileSetupScreen(navController: NavController) {
     var city by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
 
     val genderOptions = listOf("Male", "Female", "Other")
 
@@ -89,6 +88,7 @@ fun ProfileSetupScreen(navController: NavController) {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                // Fields
                 OutlinedTextField(
                     value = firstName,
                     onValueChange = { firstName = it },
@@ -140,18 +140,23 @@ fun ProfileSetupScreen(navController: NavController) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // Gender Dropdown
                 ExposedDropdownMenuBox(
                     expanded = expanded,
                     onExpandedChange = { expanded = !expanded }
                 ) {
+
                     OutlinedTextField(
                         value = gender,
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Gender") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded)
+                        },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
+                            .menuAnchor()
+                            .fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
                     )
 
@@ -172,10 +177,12 @@ fun ProfileSetupScreen(navController: NavController) {
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
+
                 Button(
                     onClick = {
 
-                        if (firstName.isBlank() ||
+                        if (
+                            firstName.isBlank() ||
                             lastName.isBlank() ||
                             age.isBlank() ||
                             country.isBlank() ||
@@ -189,23 +196,30 @@ fun ProfileSetupScreen(navController: NavController) {
 
                             try {
 
-                                val phoneNumber = dataStoreManager.phoneNumber.firstOrNull()
-                                if (phoneNumber.isNullOrEmpty()) return@launch
+                                isLoading = true
 
-                                val user = com.squarenova.emaanwallpapers.data.model.User(
-                                    phone_number = phoneNumber,
-                                    first_name = firstName,
-                                    last_name = lastName,
-                                    age = safeAge,
-                                    country = country,
-                                    city = city,
-                                    gender = gender
+                                val phoneNumber =
+                                    dataStoreManager.phoneNumber.first()
+                                        ?: return@launch
+
+                                val userData = hashMapOf(
+                                    "phone_number" to phoneNumber,
+                                    "first_name" to firstName,
+                                    "last_name" to lastName,
+                                    "age" to safeAge,
+                                    "country" to country,
+                                    "city" to city,
+                                    "gender" to gender
                                 )
 
-                                withContext(Dispatchers.IO) {
-                                    SupabaseClient.client.postgrest["users"].insert(user)
-                                }
+                                // ✅ WAIT for Firestore
+                                FirebaseClient.db
+                                    .collection("users")
+                                    .document(phoneNumber)
+                                    .set(userData)
+                                    .await()
 
+                                // ✅ Mark profile completed AFTER success
                                 dataStoreManager.setProfileCompleted()
 
                                 navController.navigate("home") {
@@ -214,6 +228,8 @@ fun ProfileSetupScreen(navController: NavController) {
 
                             } catch (e: Exception) {
                                 e.printStackTrace()
+                            } finally {
+                                isLoading = false
                             }
                         }
                     },
@@ -225,12 +241,20 @@ fun ProfileSetupScreen(navController: NavController) {
                         containerColor = Color(0xFFD4AF37)
                     )
                 ) {
-                    Text(
-                        text = "Save & Continue",
-                        color = Color.Black,
-                        fontWeight = FontWeight.SemiBold
-                    )
 
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            color = Color.Black,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "Save & Continue",
+                            color = Color.Black,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
