@@ -1,22 +1,22 @@
 package com.squarenova.emaanwallpapers.ui.home
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,32 +27,33 @@ import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.FirebaseClient
 import kotlinx.coroutines.flow.firstOrNull
 
-data class Wallpaper(
-    val url: String,
-    val category: String
-)
-
 @Composable
 fun HomeScreen(navController: NavController) {
 
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
+    val configuration = LocalConfiguration.current
+
+    // 📐 Perfect 9:16 ratio
+    val screenWidth = configuration.screenWidthDp.dp
+    val cardWidth = screenWidth - 24.dp
+    val cardHeight = cardWidth * (16f / 9f)
 
     var user by remember { mutableStateOf<User?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    var wallpaperList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isWallpaperLoading by remember { mutableStateOf(true) }
 
-    // 🔥 FIREBASE FETCH (UNCHANGED)
+    // 🔥 USER FETCH
     LaunchedEffect(Unit) {
         try {
             val phone = dataStoreManager.phoneNumber.firstOrNull()
-
             if (!phone.isNullOrEmpty()) {
                 FirebaseClient.db
                     .collection("users")
                     .document(phone)
                     .get()
                     .addOnSuccessListener { document ->
-
                         if (document.exists()) {
                             user = User(
                                 phone_number = document.getString("phone_number") ?: "",
@@ -80,82 +81,82 @@ fun HomeScreen(navController: NavController) {
     }
 
     val categories = listOf(
-        "Kaaba", "Madinah", "Quran", "Mosque",
+        "kaaba", "Madinah", "Quran", "Mosque",
         "Islamic Quotes", "Ramadan", "Allah"
     )
+    var selectedCategory by remember { mutableStateOf("kaaba") }
 
-    var selectedCategory by remember { mutableStateOf("Kaaba") }
-
-    val wallpapers = listOf(
-        Wallpaper("https://picsum.photos/600/900", "Kaaba"),
-        Wallpaper("https://picsum.photos/500/800", "Kaaba"),
-        Wallpaper("https://picsum.photos/600/1000", "Madinah"),
-        Wallpaper("https://picsum.photos/400/700", "Quran"),
-        Wallpaper("https://picsum.photos/700/900", "Allah"),
-        Wallpaper("https://picsum.photos/500/750", "Ramadan")
-    )
+    // 🔥 FETCH WALLPAPERS
+    LaunchedEffect(selectedCategory) {
+        isWallpaperLoading = true
+        FirebaseClient.db
+            .collection("Wallpapers")
+            .document(selectedCategory)
+            .get()
+            .addOnSuccessListener { document ->
+                val images = document.get("images") as? List<String>
+                wallpaperList = images ?: emptyList()
+                isWallpaperLoading = false
+            }
+            .addOnFailureListener {
+                wallpaperList = emptyList()
+                isWallpaperLoading = false
+            }
+    }
 
     val gradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF064E3B),
-            Color(0xFF0F766E)
-        )
+        colors = listOf(Color(0xFF064E3B), Color(0xFF0F766E))
     )
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF3F6F5))
+            .background(Color(0xFFF5F5F5))
     ) {
 
-        // 🌿 PREMIUM HEADER
-        Surface(
-            shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+        // ✅ HEADER — statusBarsPadding() fixes overlap with battery/wifi icons
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(140.dp)
-                .shadow(8.dp),
-            color = Color.Transparent
+                .wrapContentHeight()
+                .background(brush = gradient)
+                .statusBarsPadding()  // ✅ KEY FIX — respects status bar height
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .background(gradient)
-                    .padding(horizontal = 20.dp, vertical = 28.dp)
+            // Left: Greeting + Name
+            Column(
+                modifier = Modifier.align(Alignment.CenterStart)
             ) {
+                Text(
+                    text = "Assalamu Alaikum 🌙",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (!isLoading) user?.first_name ?: "Guest" else "",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
-                if (!isLoading && user != null) {
-                    Column(
-                        modifier = Modifier.align(Alignment.CenterStart)
-                    ) {
-                        Text(
-                            text = "Assalamu Alaikum",
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 13.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = user!!.first_name,
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
+            // Right: Avatar circle → profile
+            IconButton(
+                onClick = { navController.navigate("profile") },
+                modifier = Modifier
+                    .size(46.dp)
+                    .align(Alignment.CenterEnd)
+            ) {
                 Surface(
                     shape = CircleShape,
                     color = Color(0xFFD4AF37),
-                    modifier = Modifier
-                        .size(52.dp)
-                        .align(Alignment.CenterEnd),
-                    tonalElevation = 6.dp,
-                    onClick = { navController.navigate("profile") }
+                    modifier = Modifier.size(46.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = user?.first_name?.firstOrNull()?.toString() ?: "",
+                            text = user?.first_name?.firstOrNull()
+                                ?.uppercaseChar()?.toString() ?: "?",
                             color = Color.Black,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
@@ -165,90 +166,69 @@ fun HomeScreen(navController: NavController) {
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 🔥 CATEGORY ROW (ELEGANT STYLE)
+        // ✅ CATEGORY ROW
         LazyRow(
-            modifier = Modifier.padding(start = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(vertical = 8.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp)
         ) {
-            items(categories.size) { index ->
-                val category = categories[index]
-
-                val selected = selectedCategory == category
-
+            items(categories) { category ->
                 FilterChip(
-                    selected = selected,
+                    selected = selectedCategory == category,
                     onClick = { selectedCategory = category },
                     label = {
                         Text(
-                            category,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            text = category.replaceFirstChar { it.uppercase() },
+                            fontSize = 12.sp
                         )
                     },
+                    modifier = Modifier.padding(horizontal = 4.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color(0xFF064E3B),
                         selectedLabelColor = Color.White,
-                        containerColor = Color.White
+                        containerColor = Color(0xFFF0F0F0),
+                        labelColor = Color.Black
                     )
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 🔥 WALLPAPER GRID (Pinterest Feel)
+        // ✅ 9:16 WALLPAPER FEED
         LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp)
         ) {
-
-            items(
-                wallpapers.filter { it.category == selectedCategory }
-            ) { wallpaper: Wallpaper ->
-
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-
-                    Column {
-
+            if (isWallpaperLoading) {
+                items(3) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(cardHeight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF064E3B))
+                    }
+                }
+            } else {
+                items(wallpaperList) { url ->
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                    ) {
                         AsyncImage(
-                            model = wallpaper.url,
+                            model = url,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(420.dp)
+                                .height(cardHeight) // ✅ Perfect 9:16
                         )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-
-                            Text(
-                                text = selectedCategory,
-                                fontSize = 14.sp,
-                                color = Color(0xFF064E3B)
-                            )
-
-                            Text(
-                                text = "♡ Save",
-                                fontSize = 14.sp,
-                                color = Color.Gray
-                            )
-                        }
                     }
                 }
             }
