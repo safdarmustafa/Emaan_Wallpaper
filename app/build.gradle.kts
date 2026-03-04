@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     id("com.google.gms.google-services")
+    kotlin("plugin.serialization") version "1.9.24" // ✅ Required for Supabase
 }
 
 android {
@@ -40,31 +41,27 @@ android {
 }
 
 dependencies {
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.foundation:foundation-layout")
-    implementation("androidx.compose.foundation:foundation:1.6.0")
-    implementation("androidx.compose.foundation:foundation-android:1.6.0")
-    implementation("androidx.compose.foundation:foundation-layout-android:1.6.0")
-    implementation("androidx.compose.foundation:foundation:1.6.0")
-    implementation("androidx.compose.foundation:foundation:1.6.0")
-    implementation("androidx.compose.foundation:foundation:1.6.0")
 
-// Staggered Grid
-    implementation("androidx.compose.foundation:foundation:1.6.0")
+    // ✅ SUPABASE BOM — controls all supabase versions
+    implementation(platform("io.github.jan-tennert.supabase:bom:2.6.1"))
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")   // Database
+    implementation("io.github.jan-tennert.supabase:storage-kt")     // Image Storage
 
-// Coil for images
+    // ✅ Ktor engine — required by Supabase
+    implementation("io.ktor:ktor-client-android:2.3.12")
+
+    // 🖼️ Coil for images (deduplicated)
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // 📐 Compose Foundation (deduplicated — keep only one version)
+    implementation("androidx.compose.foundation:foundation:1.6.0")
+    implementation("androidx.compose.foundation:foundation-layout:1.6.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
-    // 🔥 Firebase BOM
+    // 🔥 Firebase BOM (keeping for auth-related stuff)
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-
-    // 🔥 Firestore Database
     implementation("com.google.firebase:firebase-firestore-ktx")
-
-    // 🔥 Firebase Analytics (optional but good)
     implementation("com.google.firebase:firebase-analytics-ktx")
 
     // 🔐 DataStore
@@ -73,7 +70,7 @@ dependencies {
     // 📡 Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // 📩 Retrofit (Fast2SMS OTP)
+    // 📩 Retrofit (Fast2SMS OTP — keeping untouched)
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.10.0")

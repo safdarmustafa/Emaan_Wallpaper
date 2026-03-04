@@ -1,35 +1,51 @@
 package com.squarenova.emaanwallpapers.ui.auth
 
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.Image
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
-import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.network.FirebaseClient
-import kotlinx.coroutines.flow.first
+import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.ui.profile.UserRow
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
+import kotlinx.serialization.Serializable
 
-@OptIn(ExperimentalMaterial3Api::class)
+// ✅ Only the fields we're inserting — no id/created_at (Supabase generates those)
+@Serializable
+data class NewUserRow(
+    val phone_number: String,
+    val first_name: String,
+    val last_name: String,
+    val age: Int?,
+    val country: String,
+    val city: String,
+    val gender: String
+)
+
 @Composable
 fun ProfileSetupScreen(navController: NavController) {
+
+    val context = LocalContext.current
+    val dataStoreManager = DataStoreManager(context)
+    val scope = rememberCoroutineScope()
 
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
@@ -37,226 +53,239 @@ fun ProfileSetupScreen(navController: NavController) {
     var country by remember { mutableStateOf("") }
     var city by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
 
-    val genderOptions = listOf("Male", "Female", "Other")
+    val bgGradient = Brush.verticalGradient(
+        listOf(Color(0xFF064E3B), Color(0xFF0D3B2E))
+    )
+    val goldColor = Color(0xFFD4AF37)
 
-    val context = LocalContext.current
-    val dataStoreManager = DataStoreManager(context)
-    val scope = rememberCoroutineScope()
-
-    Box(modifier = Modifier.fillMaxSize()) {
-
-        Image(
-            painter = painterResource(id = R.drawable.mosque),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-
-        Box(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(brush = bgGradient)
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF064E3B).copy(alpha = 0.6f))
-        )
-
-        Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.White.copy(alpha = 0.95f)
-            ),
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(24.dp)
-                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            Column(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // 🌙 Header
+            Text("🌙", fontSize = 48.sp, textAlign = TextAlign.Center)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Complete Your Profile",
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Let's personalise your Emaan experience",
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(36.dp))
+
+            // ✅ Form Card
+            Card(
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A4A38)),
+                modifier = Modifier.fillMaxWidth()
             ) {
-
-                Text(
-                    text = "Complete Your Profile",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF064E3B)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Fields
-                OutlinedTextField(
-                    value = firstName,
-                    onValueChange = { firstName = it },
-                    label = { Text("First Name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = lastName,
-                    onValueChange = { lastName = it },
-                    label = { Text("Last Name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = age,
-                    onValueChange = { age = it },
-                    label = { Text("Age") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = country,
-                    onValueChange = { country = it },
-                    label = { Text("Country") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = city,
-                    onValueChange = { city = it },
-                    label = { Text("City") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Gender Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
 
-                    OutlinedTextField(
-                        value = gender,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Gender") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded)
-                        },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp)
+                    SetupField(
+                        label = "First Name *",
+                        value = firstName,
+                        onValueChange = { firstName = it }
                     )
 
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        genderOptions.forEach {
-                            DropdownMenuItem(
-                                text = { Text(it) },
-                                onClick = {
-                                    gender = it
-                                    expanded = false
-                                }
+                    SetupField(
+                        label = "Last Name",
+                        value = lastName,
+                        onValueChange = { lastName = it }
+                    )
+
+                    SetupField(
+                        label = "Age",
+                        value = age,
+                        isNumber = true,
+                        onValueChange = { age = it }
+                    )
+
+                    SetupField(
+                        label = "Country",
+                        value = country,
+                        onValueChange = { country = it }
+                    )
+
+                    SetupField(
+                        label = "City",
+                        value = city,
+                        onValueChange = { city = it }
+                    )
+
+                    // Gender chips
+                    Text(
+                        "Gender",
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 13.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Male", "Female", "Other").forEach { option ->
+                            FilterChip(
+                                selected = gender == option,
+                                onClick = { gender = option },
+                                label = { Text(option, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = goldColor,
+                                    selectedLabelColor = Color.Black,
+                                    containerColor = Color(0xFF0D3B2E),
+                                    labelColor = Color.White
+                                )
                             )
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(24.dp))
+            // Error message
+            if (errorMessage.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = errorMessage,
+                    color = Color(0xFFFF6B6B),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
 
-                Button(
-                    onClick = {
+            Spacer(modifier = Modifier.height(28.dp))
 
-                        if (
-                            firstName.isBlank() ||
-                            lastName.isBlank() ||
-                            age.isBlank() ||
-                            country.isBlank() ||
-                            city.isBlank() ||
-                            gender.isBlank()
-                        ) return@Button
+            // ✅ Save Button
+            Button(
+                onClick = {
+                    // Validate required field
+                    if (firstName.trim().isEmpty()) {
+                        errorMessage = "First name is required"
+                        return@Button
+                    }
 
-                        val safeAge = age.toIntOrNull() ?: return@Button
+                    errorMessage = ""
+                    isSaving = true
 
-                        scope.launch {
+                    scope.launch {
+                        try {
+                            val phone = dataStoreManager.phoneNumber.firstOrNull()
+                            if (phone.isNullOrEmpty()) {
+                                errorMessage = "Session expired. Please login again."
+                                isSaving = false
+                                return@launch
+                            }
 
-                            try {
-
-                                isLoading = true
-
-                                val phoneNumber =
-                                    dataStoreManager.phoneNumber.first()
-                                        ?: return@launch
-
-                                val userData = hashMapOf(
-                                    "phone_number" to phoneNumber,
-                                    "first_name" to firstName,
-                                    "last_name" to lastName,
-                                    "age" to safeAge,
-                                    "country" to country,
-                                    "city" to city,
-                                    "gender" to gender
+                            // ✅ INSERT new user row into Supabase
+                            SupabaseClient.client
+                                .postgrest["users"]
+                                .insert(
+                                    NewUserRow(
+                                        phone_number = phone,
+                                        first_name = firstName.trim(),
+                                        last_name = lastName.trim(),
+                                        age = age.toIntOrNull(),
+                                        country = country.trim(),
+                                        city = city.trim(),
+                                        gender = gender
+                                    )
                                 )
 
-                                // ✅ WAIT for Firestore
-                                FirebaseClient.db
-                                    .collection("users")
-                                    .document(phoneNumber)
-                                    .set(userData)
-                                    .await()
-
-                                // ✅ Mark profile completed AFTER success
-                                dataStoreManager.setProfileCompleted()
-
-                                navController.navigate("home") {
-                                    popUpTo("profile_setup") { inclusive = true }
-                                }
-
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            } finally {
-                                isLoading = false
+                            // ✅ Mark profile as completed and go home
+                            dataStoreManager.setProfileCompleted()
+                            navController.navigate("home") {
+                                popUpTo("profile_setup") { inclusive = true }
                             }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFD4AF37)
-                    )
-                ) {
 
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            color = Color.Black,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    } else {
-                        Text(
-                            text = "Save & Continue",
-                            color = Color.Black,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        } catch (e: Exception) {
+                            Log.e("PROFILE_SETUP_ERROR", e.message ?: "Unknown")
+                            errorMessage = "Failed to save profile. Try again."
+                            isSaving = false
+                        }
                     }
+                },
+                enabled = !isSaving,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = goldColor)
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        "Save & Continue",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Skip option (optional — remove if you want to force setup)
+            TextButton(onClick = {
+                navController.navigate("home") {
+                    popUpTo("profile_setup") { inclusive = true }
+                }
+            }) {
+                Text(
+                    "Skip for now",
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 13.sp
+                )
             }
         }
     }
+}
+
+@Composable
+fun SetupField(
+    label: String,
+    value: String,
+    isNumber: Boolean = false,
+    onValueChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, color = Color.White.copy(alpha = 0.65f)) },
+        singleLine = true,
+        keyboardOptions = if (isNumber)
+            KeyboardOptions(keyboardType = KeyboardType.Number)
+        else KeyboardOptions.Default,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White,
+            focusedBorderColor = Color(0xFFD4AF37),
+            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+            cursorColor = Color(0xFFD4AF37)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    )
 }

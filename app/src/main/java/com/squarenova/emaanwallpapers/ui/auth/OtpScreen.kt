@@ -20,9 +20,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.network.FirebaseClient
+import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.ui.profile.UserRow
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
+
 @Composable
 fun OtpScreen(
     navController: NavController,
@@ -32,6 +34,7 @@ fun OtpScreen(
 
     var enteredOtp by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
+    var isVerifying by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
@@ -109,46 +112,53 @@ fun OtpScreen(
 
                 Button(
                     onClick = {
-
                         if (enteredOtp == sentOtp) {
-
                             scope.launch {
-
-                                // Save login
-                                dataStoreManager.saveLogin(phone)
-
+                                isVerifying = true
                                 try {
+                                    // ✅ Save phone to DataStore
+                                    dataStoreManager.saveLogin(phone)
 
-                                    val document = FirebaseClient.db
-                                        .collection("users")
-                                        .document(phone)
-                                        .get()
-                                        .await()   // 🔥 THIS FIXES EVERYTHING
+                                    // ✅ Check if user exists in Supabase
+                                    val result = SupabaseClient.client
+                                        .postgrest["users"]
+                                        .select {
+                                            filter {
+                                                eq("phone_number", phone)
+                                            }
+                                        }
+                                        .decodeList<UserRow>()
 
-                                    if (document.exists()) {
+                                    val existingUser = result.firstOrNull()
 
+                                    // ✅ FIXED: Check first_name, not just row existence.
+                                    // A user row may exist but have no name if they
+                                    // previously skipped setup or it failed mid-way.
+                                    if (existingUser != null && !existingUser.first_name.isNullOrEmpty()) {
+                                        // ✅ Returning user with complete profile → Home
                                         dataStoreManager.setProfileCompleted()
-
                                         navController.navigate("home") {
                                             popUpTo("login") { inclusive = true }
                                         }
-
                                     } else {
-
+                                        // ✅ New user OR incomplete profile → Setup
                                         navController.navigate("profile_setup") {
                                             popUpTo("login") { inclusive = true }
                                         }
                                     }
 
                                 } catch (e: Exception) {
+                                    errorMessage = "Something went wrong. Try again."
                                     e.printStackTrace()
+                                } finally {
+                                    isVerifying = false
                                 }
                             }
-
                         } else {
                             errorMessage = "Invalid OTP. Try again."
                         }
                     },
+                    enabled = !isVerifying,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
@@ -157,11 +167,19 @@ fun OtpScreen(
                         containerColor = Color(0xFFD4AF37)
                     )
                 ) {
-                    Text(
-                        text = "Verify",
-                        color = Color.Black,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    if (isVerifying) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.Black,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "Verify",
+                            color = Color.Black,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
