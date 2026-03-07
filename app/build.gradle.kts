@@ -41,6 +41,10 @@ android {
 }
 
 dependencies {
+    // coil gif dependency and Mp4 vidoes
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
+    implementation("io.coil-kt:coil-gif:2.6.0")
 
     // ✅ SUPABASE BOM — controls all supabase versions
     implementation(platform("io.github.jan-tennert.supabase:bom:2.6.1"))

@@ -36,6 +36,7 @@ import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -51,10 +52,10 @@ data class UserRow(
     val age: Int? = null,
     val country: String? = null,
     val city: String? = null,
-    val gender: String? = null
+    val gender: String? = null,
+    val avatar_url: String? = null  // ✅ persisted avatar
 )
 
-// ✅ NEW: Separate update class — no phone_number/id, we filter by phone instead
 @Serializable
 data class UserUpdateRow(
     val first_name: String? = null,
@@ -62,7 +63,8 @@ data class UserUpdateRow(
     val age: Int? = null,
     val country: String? = null,
     val city: String? = null,
-    val gender: String? = null
+    val gender: String? = null,
+    val avatar_url: String? = null  // ✅ persisted avatar
 )
 
 @Composable
@@ -73,18 +75,62 @@ fun ProfileScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
 
     var user by remember { mutableStateOf<User?>(null) }
-    var profileImageUri by remember { mutableStateOf<Uri?>(null) }
+    var avatarUrl by remember { mutableStateOf<String?>(null) }  // ✅ loaded from Supabase
+    var isUploadingAvatar by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
+    // ✅ Gallery picker — uploads immediately on pick
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { profileImageUri = it }
+        uri?.let { selectedUri ->
+            isUploadingAvatar = true
+            scope.launch {
+                try {
+                    val phone = dataStoreManager.phoneNumber.firstOrNull()
+                    if (phone.isNullOrEmpty()) return@launch
+
+                    // ✅ Read bytes from URI
+                    val inputStream = context.contentResolver.openInputStream(selectedUri)
+                    val bytes = inputStream?.readBytes() ?: return@launch
+                    inputStream.close()
+
+                    // ✅ Upload to Supabase Storage avatars bucket
+                    val fileName = "avatar_${phone}.jpg"
+                    SupabaseClient.client.storage
+                        .from("avatars")
+                        .upload(fileName, bytes, upsert = true)
+
+                    // ✅ Get public URL
+                    val publicUrl = SupabaseClient.client.storage
+                        .from("avatars")
+                        .publicUrl(fileName)
+
+                    // ✅ Save URL to users table
+                    SupabaseClient.client
+                        .postgrest["users"]
+                        .update(UserUpdateRow(avatar_url = publicUrl)) {
+                            filter { eq("phone_number", phone) }
+                        }
+
+                    // ✅ Update UI immediately
+                    avatarUrl = publicUrl
+                    saveMessage = "Profile picture updated ✅"
+
+                } catch (e: Exception) {
+                    Log.e("AVATAR_UPLOAD_ERROR", e.message ?: "Unknown")
+                    saveMessage = "Failed to upload picture ❌"
+                } finally {
+                    isUploadingAvatar = false
+                }
+            }
+        }
     }
 
+    // 🔥 FETCH USER FROM SUPABASE
     LaunchedEffect(Unit) {
         try {
             val phone = dataStoreManager.phoneNumber.firstOrNull()
@@ -92,9 +138,7 @@ fun ProfileScreen(navController: NavController) {
                 val result = SupabaseClient.client
                     .postgrest["users"]
                     .select {
-                        filter {
-                            eq("phone_number", phone)
-                        }
+                        filter { eq("phone_number", phone) }
                     }
                     .decodeSingle<UserRow>()
 
@@ -107,6 +151,9 @@ fun ProfileScreen(navController: NavController) {
                     city = result.city ?: "",
                     gender = result.gender ?: ""
                 )
+
+                // ✅ Load saved avatar URL
+                avatarUrl = result.avatar_url
             }
         } catch (e: Exception) {
             Log.e("PROFILE_ERROR", e.message ?: "Unknown error")
@@ -133,10 +180,6 @@ fun ProfileScreen(navController: NavController) {
                     try {
                         val phone = dataStoreManager.phoneNumber.firstOrNull()
                         if (!phone.isNullOrEmpty()) {
-
-                            // ✅ FIX: UPDATE with filter instead of upsert
-                            // upsert was trying to INSERT and hitting the unique constraint on phone_number.
-                            // Since the user always exists at this point, a filtered UPDATE is correct.
                             SupabaseClient.client
                                 .postgrest["users"]
                                 .update(
@@ -149,16 +192,13 @@ fun ProfileScreen(navController: NavController) {
                                         gender = updatedUser.gender
                                     )
                                 ) {
-                                    filter {
-                                        eq("phone_number", phone)
-                                    }
+                                    filter { eq("phone_number", phone) }
                                 }
 
                             user = updatedUser
                             isSaving = false
                             showEditDialog = false
                             saveMessage = "Profile updated successfully ✅"
-
                         } else {
                             isSaving = false
                             saveMessage = "Phone number not found ❌"
@@ -182,6 +222,7 @@ fun ProfileScreen(navController: NavController) {
     Box(modifier = Modifier.fillMaxSize().background(darkGreen)) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
 
+            // Header
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -194,11 +235,10 @@ fun ProfileScreen(navController: NavController) {
                     modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
                 ) {
                     Box(
-                        modifier = Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)),
+                        modifier = Modifier.size(38.dp).clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
-                    ) {
-                        Text("←", color = Color.White, fontSize = 20.sp)
-                    }
+                    ) { Text("←", color = Color.White, fontSize = 20.sp) }
                 }
 
                 Text(
@@ -214,46 +254,73 @@ fun ProfileScreen(navController: NavController) {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(modifier = Modifier.size(124.dp), contentAlignment = Alignment.Center) {
+
+                        // Glow ring
                         Box(
                             modifier = Modifier.size(124.dp).clip(CircleShape)
-                                .background(Brush.radialGradient(listOf(goldColor.copy(alpha = 0.4f), Color.Transparent)))
+                                .background(
+                                    Brush.radialGradient(
+                                        listOf(goldColor.copy(alpha = 0.4f), Color.Transparent)
+                                    )
+                                )
                         )
+
+                        // Avatar circle
                         Box(
-                            modifier = Modifier.size(114.dp).clip(CircleShape)
+                            modifier = Modifier
+                                .size(114.dp)
+                                .clip(CircleShape)
                                 .border(3.dp, goldColor, CircleShape)
                                 .clickable { galleryLauncher.launch("image/*") }
                         ) {
-                            if (profileImageUri != null) {
-                                AsyncImage(
-                                    model = profileImageUri,
-                                    contentDescription = "Profile Picture",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                )
-                            } else {
-                                Surface(shape = CircleShape, color = goldColor, modifier = Modifier.fillMaxSize()) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        if (isLoading) {
-                                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
-                                        } else {
-                                            Text(
-                                                text = user?.first_name?.firstOrNull()?.toString() ?: "?",
-                                                fontSize = 42.sp, color = Color.Black, fontWeight = FontWeight.Bold
-                                            )
+                            when {
+                                // ✅ Show upload spinner
+                                isUploadingAvatar -> {
+                                    Surface(shape = CircleShape, color = goldColor.copy(alpha = 0.3f), modifier = Modifier.fillMaxSize()) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator(color = goldColor, modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+                                        }
+                                    }
+                                }
+                                // ✅ Show saved avatar from Supabase
+                                avatarUrl != null -> {
+                                    AsyncImage(
+                                        model = avatarUrl,
+                                        contentDescription = "Profile Picture",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                    )
+                                }
+                                // Show initial letter fallback
+                                else -> {
+                                    Surface(shape = CircleShape, color = goldColor, modifier = Modifier.fillMaxSize()) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (isLoading) {
+                                                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                                            } else {
+                                                Text(
+                                                    text = user?.first_name?.firstOrNull()?.toString() ?: "?",
+                                                    fontSize = 42.sp, color = Color.Black, fontWeight = FontWeight.Bold
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+
+                        // Camera badge
                         Box(
-                            modifier = Modifier.size(32.dp).align(Alignment.BottomEnd)
-                                .shadow(4.dp, CircleShape).clip(CircleShape)
-                                .background(Color(0xFF064E3B)).border(2.dp, Color.White, CircleShape)
+                            modifier = Modifier
+                                .size(32.dp)
+                                .align(Alignment.BottomEnd)
+                                .shadow(4.dp, CircleShape)
+                                .clip(CircleShape)
+                                .background(Color(0xFF064E3B))
+                                .border(2.dp, Color.White, CircleShape)
                                 .clickable { galleryLauncher.launch("image/*") },
                             contentAlignment = Alignment.Center
-                        ) {
-                            Text("📷", fontSize = 13.sp)
-                        }
+                        ) { Text("📷", fontSize = 13.sp) }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -281,6 +348,7 @@ fun ProfileScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(90.dp))
 
+            // Stats card
             Card(
                 modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -338,14 +406,13 @@ fun ProfileScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(24.dp))
         }
 
+        // Snackbar
         saveMessage?.let { msg ->
             Snackbar(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
                 containerColor = if (msg.contains("✅")) Color(0xFF064E3B) else Color(0xFFB00020),
                 shape = RoundedCornerShape(14.dp)
-            ) {
-                Text(msg, color = Color.White, fontWeight = FontWeight.Medium)
-            }
+            ) { Text(msg, color = Color.White, fontWeight = FontWeight.Medium) }
         }
     }
 }
