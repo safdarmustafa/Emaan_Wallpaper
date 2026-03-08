@@ -46,6 +46,8 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -257,7 +259,8 @@ fun HomeScreen(navController: NavController) {
                                 if (isSelected) darkGreen.copy(alpha = 0.6f)
                                 else Color.White.copy(alpha = 0.05f)
                             )
-                            .clickable {
+                            .smoothClickable {
+                                AnalyticsManager.trackEvent("Home - Filter Selected", mapOf("filter" to filter.label))
                                 activeFilter = filter
                                 showFilterSheet = false
                             }
@@ -324,39 +327,41 @@ fun HomeScreen(navController: NavController) {
                         fontWeight = FontWeight.Bold
                     )
                 }
-                IconButton(
-                    onClick = { navController.navigate("profile") },
-                    modifier = Modifier.size(46.dp).align(Alignment.CenterEnd)
+                Box(
+                    modifier = Modifier
+                        .smoothClickable {
+                            AnalyticsManager.trackEvent("Home - Profile Avatar Tapped")
+                            navController.navigate("profile")
+                        }
+                        .size(46.dp)
+                        .align(Alignment.CenterEnd)
+                        .clip(CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.size(46.dp).clip(CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!avatarUrl.isNullOrEmpty()) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(avatarUrl).crossfade(true).build(),
-                                contentDescription = "Profile",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(46.dp).clip(CircleShape)
-                            )
-                        } else {
-                            Surface(
-                                shape = CircleShape,
-                                color = goldColor,
-                                modifier = Modifier.size(46.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = user?.first_name
-                                            ?.firstOrNull()
-                                            ?.uppercaseChar()
-                                            ?.toString() ?: "?",
-                                        color = Color.Black,
-                                        fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                    if (!avatarUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(avatarUrl).crossfade(true).build(),
+                            contentDescription = "Profile",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(46.dp).clip(CircleShape)
+                        )
+                    } else {
+                        Surface(
+                            shape = CircleShape,
+                            color = goldColor,
+                            modifier = Modifier.size(46.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = user?.first_name
+                                        ?.firstOrNull()
+                                        ?.uppercaseChar()
+                                        ?.toString() ?: "?",
+                                    color = Color.Black,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
@@ -383,7 +388,10 @@ fun HomeScreen(navController: NavController) {
                                 if (activeFilter != WallpaperFilter.ALL) darkGreen
                                 else Color(0xFFF0F0F0)
                             )
-                            .clickable { showFilterSheet = true },
+                            .smoothClickable {
+                                AnalyticsManager.trackEvent("Home - Filter Tapped")
+                                showFilterSheet = true
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -401,6 +409,7 @@ fun HomeScreen(navController: NavController) {
                         FilterChip(
                             selected = selectedCategory == category,
                             onClick = {
+                                AnalyticsManager.trackEvent("Home - Category Selected", mapOf("category" to category))
                                 selectedCategory =
                                     if (selectedCategory == category) null else category
                             },
@@ -446,8 +455,8 @@ fun HomeScreen(navController: NavController) {
                 contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp)
             ) {
 
-                // Live wallpapers
-                if (activeFilter == WallpaperFilter.ALL || activeFilter == WallpaperFilter.LIVE) {
+                // Live wallpapers — only show when no category is selected
+                if ((activeFilter == WallpaperFilter.ALL && selectedCategory == null) || activeFilter == WallpaperFilter.LIVE) {
                     if (isLiveLoading) {
                         items(2) { ShimmerCard(cardHeight) }
                     } else {
@@ -457,6 +466,7 @@ fun HomeScreen(navController: NavController) {
                                 title = liveWallpaper.title,
                                 cardHeight = cardHeight,
                                 onSetLiveWallpaper = {
+                                    AnalyticsManager.trackEvent("Home - Set Live Wallpaper Tapped", mapOf("wallpaper_id" to liveWallpaper.id))
                                     setLiveWallpaper(context, liveWallpaper.url)
                                     snackbarIsSuccess = true
                                     snackbarMessage = "Opening live wallpaper picker ✅"
@@ -496,6 +506,7 @@ fun HomeScreen(navController: NavController) {
                                 isSettingWallpaper = settingWallpaperUrl == wallpaper.url,
                                 onSetWallpaper = {
                                     if (settingWallpaperUrl != null) return@WallpaperCard
+                                    AnalyticsManager.trackEvent("Home - Set Wallpaper Tapped", mapOf("wallpaper_id" to wallpaper.id, "category" to wallpaper.category))
                                     settingWallpaperUrl = wallpaper.url
                                     scope.launch {
                                         val result = setWallpaper(context, wallpaper.url)
@@ -753,7 +764,7 @@ fun WallpaperCard(
                     )
                 } else {
                     Text(
-                        "🖼️  Set Wallpaper",
+                        "Set Wallpaper",
                         color = Color.Black,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp

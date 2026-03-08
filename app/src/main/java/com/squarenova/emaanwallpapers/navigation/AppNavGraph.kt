@@ -1,15 +1,15 @@
 package com.squarenova.emaanwallpapers.navigation
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,6 +26,8 @@ import com.squarenova.emaanwallpapers.ui.auth.ProfileSetupScreen
 import com.squarenova.emaanwallpapers.ui.home.HomeScreen
 import com.squarenova.emaanwallpapers.ui.profile.ProfileScreen
 import com.squarenova.emaanwallpapers.ui.reels.ReelsScreen
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.ui.splash.SplashScreen
 
 private val bottomNavScreens = listOf("home", "reels")
@@ -37,6 +39,17 @@ fun AppNavGraph() {
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = currentRoute in bottomNavScreens
 
+    // Screen view tracking — fires whenever route changes
+    LaunchedEffect(currentRoute) {
+        currentRoute?.let { route ->
+            val screenName = when {
+                route.startsWith("otp/") -> "OTP"
+                else -> route.replaceFirstChar { it.uppercaseChar() }
+            }
+            AnalyticsManager.trackScreen(screenName)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
 
         NavHost(
@@ -45,7 +58,7 @@ fun AppNavGraph() {
             // ✅ Add bottom padding so content isn't hidden behind nav bar
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = if (showBottomBar) 56.dp else 0.dp)
+                .padding(bottom = if (showBottomBar) 52.dp else 0.dp)
         ) {
             composable("splash") { SplashScreen(navController) }
             composable("login") { LoginScreen(navController) }
@@ -79,7 +92,12 @@ fun AppNavGraph() {
     }
 }
 
-data class BottomNavItem(val route: String, val emoji: String, val label: String)
+data class BottomNavItem(
+    val route: String,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
+)
 
 @Composable
 fun BottomNavBar(
@@ -88,58 +106,65 @@ fun BottomNavBar(
     modifier: Modifier = Modifier
 ) {
     val items = listOf(
-        BottomNavItem("home", "🕌", "Wallpapers"),
-        BottomNavItem("reels", "🎬", "Reels")
+        BottomNavItem(
+            route = "home",
+            label = "Wallpapers",
+            selectedIcon = Icons.Filled.Home,
+            unselectedIcon = Icons.Filled.Home
+        ),
+        BottomNavItem(
+            route = "reels",
+            label = "Reels",
+            selectedIcon = Icons.Filled.PlayArrow,
+            unselectedIcon = Icons.Filled.PlayArrow
+        )
     )
-    val goldColor = Color(0xFFD4AF37)
 
-    // ✅ Fixed compact height — 56dp only, no extra padding
-    Row(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF0A3528))
-            .navigationBarsPadding()
-            .height(56.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+            .navigationBarsPadding(),
+        color = Color(0xFF0A3528),
+        shadowElevation = 8.dp
     ) {
-        items.forEach { item ->
-            val isSelected = currentRoute == item.route
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable {
-                        if (currentRoute != item.route) {
-                            navController.navigate(item.route) {
-                                popUpTo("home") { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items.forEach { item ->
+                val isSelected = currentRoute == item.route
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .smoothClickable {
+                            if (currentRoute != item.route) {
+                                AnalyticsManager.trackEvent("Bottom Nav - ${item.label} Tapped")
+                                navController.navigate(item.route) {
+                                    popUpTo("home") { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
                         }
-                    }
-            ) {
-                Text(
-                    text = item.emoji,
-                    fontSize = if (isSelected) 22.sp else 20.sp
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = item.label,
-                    color = if (isSelected) goldColor else Color.White.copy(alpha = 0.5f),
-                    fontSize = 10.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                )
-                if (isSelected) {
+                ) {
+                    Icon(
+                        imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
+                        contentDescription = item.label,
+                        tint = if (isSelected) Color(0xFFD4AF37) else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(22.dp)
+                    )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Box(
-                        modifier = Modifier
-                            .width(16.dp)
-                            .height(2.dp)
-                            .clip(RoundedCornerShape(50.dp))
-                            .background(goldColor)
+                    Text(
+                        text = item.label,
+                        color = if (isSelected) Color(0xFFD4AF37) else Color.White.copy(alpha = 0.5f),
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
             }

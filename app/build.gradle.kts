@@ -18,6 +18,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Replace with your Mixpanel Project Token from https://mixpanel.com/settings/project
+        buildConfigField("String", "MIXPANEL_TOKEN", "\"${project.findProperty("MIXPANEL_TOKEN") ?: "05b8284523c8db2146e3afff2585c9be"}\"")
     }
 
     buildTypes {
@@ -37,6 +40,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -73,6 +77,9 @@ dependencies {
 
     // 📡 Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
+
+    // 📊 Mixpanel Analytics
+    implementation("com.mixpanel.android:mixpanel-android:7.2.2")
 
     // 📩 Retrofit (Fast2SMS OTP — keeping untouched)
     implementation("com.squareup.retrofit2:retrofit:2.9.0")

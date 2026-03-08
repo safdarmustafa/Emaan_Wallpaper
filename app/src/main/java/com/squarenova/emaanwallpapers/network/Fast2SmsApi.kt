@@ -12,9 +12,12 @@ interface Fast2SmsApi {
     @POST("dev/bulkV2")
     suspend fun sendOtp(
         @Header("authorization") authorization: String,
-        @Field("route") route: String = "q",
         @Field("message") message: String,
-        @Field("language") language: String = "english",
-        @Field("numbers") numbers: String
+        @Field("numbers") numbers: String,
+        @Field("sender_id") senderId: String,
+        @Field("pe_id") peId: String,
+        @Field("template_id") templateId: String,
+        @Field("route") route: String = "q",
+        @Field("language") language: String = "english"
     ): Response<Any>
 }

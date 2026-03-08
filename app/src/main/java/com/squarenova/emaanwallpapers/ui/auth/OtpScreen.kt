@@ -21,6 +21,7 @@ import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.ui.profile.UserRow
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.launch
@@ -112,12 +113,16 @@ fun OtpScreen(
 
                 Button(
                     onClick = {
-                        if (enteredOtp == sentOtp) {
+                        AnalyticsManager.trackEvent("OTP - Verify Tapped")
+                        // TODO: REMOVE "123456" BEFORE PRODUCTION
+                        if (enteredOtp == sentOtp || enteredOtp == "123456") {
                             scope.launch {
                                 isVerifying = true
                                 try {
                                     // ✅ Save phone to DataStore
                                     dataStoreManager.saveLogin(phone)
+                                    AnalyticsManager.identify(phone)
+                                    AnalyticsManager.trackEvent("OTP - Verify Success")
 
                                     // ✅ Check if user exists in Supabase
                                     val result = SupabaseClient.client
@@ -133,7 +138,7 @@ fun OtpScreen(
 
                                     // ✅ FIXED: Check first_name, not just row existence.
                                     // A user row may exist but have no name if they
-                                    // previously skipped setup or it failed mid-way.
+                                    // previously skipped setup ,or it failed mid-way.
                                     if (existingUser != null && !existingUser.first_name.isNullOrEmpty()) {
                                         // ✅ Returning user with complete profile → Home
                                         dataStoreManager.setProfileCompleted()

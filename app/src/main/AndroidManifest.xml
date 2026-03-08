@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="android.permission.BIND_WALLPAPER" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -19,6 +20,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.EmaanWallpapers"
         android:usesCleartextTraffic="true">
+
+        <!-- Mixpanel debug: set to false for release -->
+        <meta-data
+            android:name="com.mixpanel.android.MPConfig.EnableDebugLogging"
+            android:value="true" />
 
         <activity
             android:name=".MainActivity"
@@ -51,6 +57,16 @@
             android:name=".ui.wallpaper.WallpaperPreviewActivity"
             android:exported="true" />
 
+        <!-- FileProvider for sharing videos to WhatsApp status -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

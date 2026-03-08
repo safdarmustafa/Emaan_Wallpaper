@@ -21,6 +21,7 @@ import com.squarenova.emaanwallpapers.R
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import com.squarenova.emaanwallpapers.network.RetrofitClient
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.network.Fast2SmsConfig
 
 @Composable
@@ -108,6 +109,7 @@ fun LoginScreen(navController: NavController) {
 
                 Button(
                     onClick = {
+                        AnalyticsManager.trackEvent("Login - Continue Tapped")
 
                         val cleanNumber = phoneNumber.filter { it.isDigit() }
 
@@ -124,11 +126,14 @@ fun LoginScreen(navController: NavController) {
 
                         scope.launch {
                             try {
-
+                                // ✅ DLT fields added — required for India SMS delivery
                                 val response = RetrofitClient.api.sendOtp(
                                     authorization = Fast2SmsConfig.API_KEY,
                                     message = message,
-                                    numbers = cleanNumber
+                                    numbers = cleanNumber,
+                                    senderId = Fast2SmsConfig.DLT_SENDER_ID,
+                                    peId = Fast2SmsConfig.DLT_PE_ID,
+                                    templateId = Fast2SmsConfig.DLT_TE_ID
                                 )
 
                                 println("HTTP Code: ${response.code()}")

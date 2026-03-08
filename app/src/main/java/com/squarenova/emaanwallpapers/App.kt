@@ -1,6 +1,11 @@
 package com.squarenova.emaanwallpapers
 
 import android.app.Application
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import coil.Coil
 import coil.ImageLoader
 import coil.disk.DiskCache
@@ -11,6 +16,17 @@ import java.util.concurrent.TimeUnit
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        AnalyticsManager.init(this, BuildConfig.MIXPANEL_TOKEN)
+        AnalyticsManager.trackEvent("App Launched")
+        AnalyticsManager.flush()
+
+        // Flush Mixpanel when app goes to background (ensures events are sent)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) {
+                AnalyticsManager.flush()
+            }
+        })
 
         // ✅ Global Coil config with disk + memory cache
         val imageLoader = ImageLoader.Builder(this)

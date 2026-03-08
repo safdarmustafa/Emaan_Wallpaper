@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.ui.profile.UserRow
@@ -147,7 +148,10 @@ fun ProfileSetupScreen(navController: NavController) {
                         listOf("Male", "Female", "Other").forEach { option ->
                             FilterChip(
                                 selected = gender == option,
-                                onClick = { gender = option },
+                                onClick = {
+                                    AnalyticsManager.trackEvent("Profile Setup - Gender Selected", mapOf("gender" to option))
+                                    gender = option
+                                },
                                 label = { Text(option, fontSize = 12.sp) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = goldColor,
@@ -177,6 +181,7 @@ fun ProfileSetupScreen(navController: NavController) {
             // ✅ Save Button
             Button(
                 onClick = {
+                    AnalyticsManager.trackEvent("Profile Setup - Save & Continue Tapped")
                     // Validate required field
                     if (firstName.trim().isEmpty()) {
                         errorMessage = "First name is required"
@@ -250,6 +255,7 @@ fun ProfileSetupScreen(navController: NavController) {
 
             // Skip option (optional — remove if you want to force setup)
             TextButton(onClick = {
+                AnalyticsManager.trackEvent("Profile Setup - Skip Tapped")
                 navController.navigate("home") {
                     popUpTo("profile_setup") { inclusive = true }
                 }

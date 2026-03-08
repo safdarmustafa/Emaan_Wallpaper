@@ -4,6 +4,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -173,7 +177,10 @@ fun ProfileScreen(navController: NavController) {
         EditProfileDialog(
             user = user,
             isSaving = isSaving,
-            onDismiss = { showEditDialog = false },
+            onDismiss = {
+                AnalyticsManager.trackEvent("Profile - Edit Dialog Cancel Tapped")
+                showEditDialog = false
+            },
             onSave = { updatedUser ->
                 isSaving = true
                 scope.launch {
@@ -230,15 +237,34 @@ fun ProfileScreen(navController: NavController) {
                     .background(brush = headerGradient)
                     .statusBarsPadding()
             ) {
-                IconButton(
-                    onClick = { navController.popBackStack() },
-                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                Box(
+                    modifier = Modifier
+                        .smoothClickable {
+                            AnalyticsManager.trackEvent("Profile - Back Tapped")
+                            navController.popBackStack()
+                        }
+                        .align(Alignment.TopStart)
+                        .padding(12.dp)
+                        .size(44.dp)
+                        .shadow(4.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.25f),
+                                    Color.White.copy(alpha = 0.08f)
+                                )
+                            )
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.size(38.dp).clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) { Text("←", color = Color.White, fontSize = 20.sp) }
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
 
                 Text(
@@ -271,7 +297,10 @@ fun ProfileScreen(navController: NavController) {
                                 .size(114.dp)
                                 .clip(CircleShape)
                                 .border(3.dp, goldColor, CircleShape)
-                                .clickable { galleryLauncher.launch("image/*") }
+                                .smoothClickable {
+                                    AnalyticsManager.trackEvent("Profile - Avatar Tapped")
+                                    galleryLauncher.launch("image/*")
+                                }
                         ) {
                             when {
                                 // ✅ Show upload spinner
@@ -318,7 +347,10 @@ fun ProfileScreen(navController: NavController) {
                                 .clip(CircleShape)
                                 .background(Color(0xFF064E3B))
                                 .border(2.dp, Color.White, CircleShape)
-                                .clickable { galleryLauncher.launch("image/*") },
+                                .smoothClickable {
+                                    AnalyticsManager.trackEvent("Profile - Camera Badge Tapped")
+                                    galleryLauncher.launch("image/*")
+                                },
                             contentAlignment = Alignment.Center
                         ) { Text("📷", fontSize = 13.sp) }
                     }
@@ -380,9 +412,16 @@ fun ProfileScreen(navController: NavController) {
             )
 
             Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ProfileItem(icon = "✏️", title = "Edit Profile", subtitle = "Update your personal information", containerColor = deepCard) { showEditDialog = true }
-                ProfileItem(icon = "👑", title = "Upgrade to Premium", subtitle = "Unlock exclusive wallpapers", containerColor = Color(0xFF2A3D1F), titleColor = goldColor)
-                ProfileItem(icon = "📤", title = "Share App", subtitle = "Invite friends to Emaan Wallpapers", containerColor = deepCard)
+                ProfileItem(icon = "✏️", title = "Edit Profile", subtitle = "Update your personal information", containerColor = deepCard) {
+                    AnalyticsManager.trackEvent("Profile - Edit Profile Tapped")
+                    showEditDialog = true
+                }
+                ProfileItem(icon = "👑", title = "Upgrade to Premium", subtitle = "Unlock exclusive wallpapers", containerColor = Color(0xFF2A3D1F), titleColor = goldColor) {
+                    AnalyticsManager.trackEvent("Profile - Upgrade Premium Tapped")
+                }
+                ProfileItem(icon = "📤", title = "Share App", subtitle = "Invite friends to Emaan Wallpapers", containerColor = deepCard) {
+                    AnalyticsManager.trackEvent("Profile - Share App Tapped")
+                }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -394,7 +433,9 @@ fun ProfileScreen(navController: NavController) {
                 )
 
                 ProfileItem(icon = "🚪", title = "Logout", subtitle = "Sign out of your account", containerColor = Color(0xFF3D1515), titleColor = Color(0xFFFF6B6B)) {
+                    AnalyticsManager.trackEvent("Profile - Logout Tapped")
                     scope.launch {
+                        AnalyticsManager.reset()
                         dataStoreManager.logout()
                         navController.navigate("login") { popUpTo("home") { inclusive = true } }
                     }
@@ -449,7 +490,10 @@ fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onS
                     listOf("Male", "Female", "Other").forEach { option ->
                         FilterChip(
                             selected = gender == option,
-                            onClick = { gender = option },
+                            onClick = {
+                                AnalyticsManager.trackEvent("Profile - Edit Dialog Gender Selected", mapOf("gender" to option))
+                                gender = option
+                            },
                             label = { Text(option, fontSize = 12.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFFD4AF37),
@@ -465,7 +509,10 @@ fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onS
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(
-                        onClick = onDismiss,
+                        onClick = {
+                            AnalyticsManager.trackEvent("Profile - Edit Dialog Cancel Tapped")
+                            onDismiss()
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
@@ -473,6 +520,7 @@ fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onS
 
                     Button(
                         onClick = {
+                            AnalyticsManager.trackEvent("Profile - Edit Dialog Save Tapped")
                             onSave(User(
                                 phone_number = user?.phone_number ?: "",
                                 first_name = firstName.trim(),

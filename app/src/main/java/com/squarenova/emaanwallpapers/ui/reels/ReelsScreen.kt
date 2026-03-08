@@ -8,8 +8,14 @@ import android.os.Environment
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.core.content.FileProvider
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -38,11 +44,20 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.ui.components.smoothClickable
+import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import java.io.File
+import java.io.FileOutputStream
+import java.net.URL
 
 @Serializable
 data class ReelRow(
@@ -81,14 +96,60 @@ fun shareVideo(context: Context, url: String, title: String?) {
     context.startActivity(Intent.createChooser(intent, "Share via"))
 }
 
+/**
+ * Downloads video and shares it as a file to WhatsApp (status/chats).
+ * Shares the actual video, not a link.
+ */
+suspend fun shareVideoToWhatsApp(context: Context, url: String, title: String?): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            val ext = if (url.contains(".MOV", ignoreCase = true)) ".mov" else ".mp4"
+            val fileName = "reel_${System.currentTimeMillis()}$ext"
+            val shareDir = File(context.cacheDir, "share").apply { mkdirs() }
+            val file = File(shareDir, fileName)
+
+            URL(url).openStream().use { input ->
+                FileOutputStream(file).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${BuildConfig.APPLICATION_ID}.fileprovider",
+                file
+            )
+
+            withContext(Dispatchers.Main) {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "video/*"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    setPackage("com.whatsapp")
+                }
+                context.startActivity(intent)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("WHATSAPP_SHARE", e.message ?: "Unknown error", e)
+            withContext(Dispatchers.Main) {
+                shareVideo(context, url, title)
+            }
+            false
+        }
+    }
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun ReelsScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var reels by remember { mutableStateOf<List<ReelRow>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
+    var isSharingToWhatsApp by remember { mutableStateOf(false) }
 
     LaunchedEffect(toastMessage) {
         if (toastMessage != null) {
@@ -118,22 +179,57 @@ fun ReelsScreen() {
     ) {
         when {
             isLoading -> {
-                CircularProgressIndicator(
-                    color = Color(0xFFD4AF37),
-                    modifier = Modifier.align(Alignment.Center),
-                    strokeWidth = 3.dp
+                val infiniteTransition = rememberInfiniteTransition(label = "loading")
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.4f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(800),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "alpha"
                 )
-            }
-
-            reels.isEmpty() -> {
                 Column(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("🎬", fontSize = 64.sp)
+                    Text("🎬", fontSize = 56.sp)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    CircularProgressIndicator(
+                        color = Color(0xFFD4AF37),
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(48.dp)
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("No reels yet", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("Coming soon insha'Allah", color = Color.White.copy(alpha = 0.5f), fontSize = 14.sp)
+                    Text(
+                        "Loading reels...",
+                        color = Color.White.copy(alpha = alpha),
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            reels.isEmpty() -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("🎬", fontSize = 72.sp)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        "No reels yet",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Coming soon insha'Allah",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 15.sp
+                    )
                 }
             }
 
@@ -148,22 +244,50 @@ fun ReelsScreen() {
                         reel = reels[page],
                         isVisible = pagerState.currentPage == page,
                         onDownload = {
+                            AnalyticsManager.trackEvent("Reels - Download Tapped", mapOf("reel_id" to reels[page].id))
                             downloadVideo(context, reels[page].url, reels[page].title)
                             toastMessage = "Downloading... check notifications 📥"
                         },
-                        onShare = { shareVideo(context, reels[page].url, reels[page].title) },
+                        onShare = {
+                            AnalyticsManager.trackEvent("Reels - Share Tapped", mapOf("reel_id" to reels[page].id))
+                            shareVideo(context, reels[page].url, reels[page].title)
+                        },
                         onWhatsApp = {
-                            try {
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    `package` = "com.whatsapp"
-                                    putExtra(Intent.EXTRA_TEXT, "${reels[page].title ?: "Islamic Reel"}\n\n${reels[page].url}")
-                                }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                shareVideo(context, reels[page].url, reels[page].title)
+                            if (isSharingToWhatsApp) return@ReelItem
+                            AnalyticsManager.trackEvent("Reels - WhatsApp Tapped", mapOf("reel_id" to reels[page].id))
+                            isSharingToWhatsApp = true
+                            scope.launch {
+                                val success = shareVideoToWhatsApp(
+                                    context, reels[page].url, reels[page].title
+                                )
+                                isSharingToWhatsApp = false
+                                toastMessage = if (success) "Opening WhatsApp... 📱" else "Sharing link instead"
                             }
                         }
+                    )
+                }
+            }
+        }
+
+        // WhatsApp sharing overlay
+        if (isSharingToWhatsApp) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = Color(0xFFD4AF37),
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Preparing video for WhatsApp...",
+                        color = Color.White,
+                        fontSize = 14.sp
                     )
                 }
             }
@@ -182,9 +306,14 @@ fun ReelsScreen() {
                 modifier = Modifier
                     .clip(RoundedCornerShape(50.dp))
                     .background(Color(0xFF064E3B))
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
             ) {
-                Text(toastMessage ?: "", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    toastMessage ?: "",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }
@@ -254,10 +383,11 @@ fun ReelItem(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .clickable {
-                    isPlaying = !isPlaying
-                    if (isPlaying) exoPlayer.play() else exoPlayer.pause()
-                }
+                .smoothClickable {
+                        AnalyticsManager.trackEvent("Reels - Video Tapped", mapOf("action" to (if (isPlaying) "pause" else "play")))
+                        isPlaying = !isPlaying
+                        if (isPlaying) exoPlayer.play() else exoPlayer.pause()
+                    }
         )
 
         // Top gradient
@@ -300,10 +430,22 @@ fun ReelItem(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50.dp))
-                        .background(Color(0xFFD4AF37).copy(alpha = 0.9f))
-                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFFD4AF37),
+                                    Color(0xFFB8860B)
+                                )
+                            )
+                        )
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
-                    Text(reel.category, color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        reel.category,
+                        color = Color.Black,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             } else {
                 Spacer(modifier = Modifier.width(1.dp))
@@ -312,10 +454,11 @@ fun ReelItem(
             // Mute toggle
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .clickable {
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .smoothClickable {
+                        AnalyticsManager.trackEvent("Reels - Mute Toggled", mapOf("muted" to (!isMuted).toString()))
                         isMuted = !isMuted
                         exoPlayer.volume = if (isMuted) 0f else 1f
                     },
@@ -343,51 +486,78 @@ fun ReelItem(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 16.dp),
+                .padding(end = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            ActionButton(emoji = "💬", label = "WhatsApp", onClick = onWhatsApp)
+            ActionButton(
+                emoji = "💬",
+                label = "WhatsApp",
+                onClick = onWhatsApp,
+                accentColor = Color(0xFF25D366)
+            )
             ActionButton(emoji = "↗️", label = "Share", onClick = onShare)
-            ActionButton(emoji = "⬇️", label = "Download", onClick = onDownload)
+            ActionButton(
+                emoji = "⬇️",
+                label = "Download",
+                onClick = onDownload,
+                accentColor = Color(0xFFD4AF37)
+            )
         }
 
         // Bottom info
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 80.dp, bottom = 24.dp)
+                .padding(start = 20.dp, end = 90.dp, bottom = 28.dp)
                 .navigationBarsPadding()
         ) {
             if (!reel.title.isNullOrEmpty()) {
-                Text(reel.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    reel.title,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
             }
-            Text("Swipe up for more ↑", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+            Text(
+                "Swipe up for more ↑",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 13.sp
+            )
         }
     }
 }
 
 @Composable
-fun ActionButton(emoji: String, label: String, onClick: () -> Unit) {
+fun ActionButton(
+    emoji: String,
+    label: String,
+    onClick: () -> Unit,
+    accentColor: Color? = null
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }
+        modifier = Modifier.smoothClickable { onClick() }
     ) {
         Box(
             modifier = Modifier
-                .size(50.dp)
+                .size(56.dp)
                 .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.5f)),
+                .background(
+                    accentColor?.copy(alpha = 0.3f)
+                        ?: Color.Black.copy(alpha = 0.55f)
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Text(emoji, fontSize = 22.sp)
+            Text(emoji, fontSize = 24.sp)
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = label,
             color = Color.White,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center
         )
