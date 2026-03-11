@@ -24,6 +24,10 @@ import com.squarenova.emaanwallpapers.network.RetrofitClient
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.network.Fast2SmsConfig
 
+// TODO: REMOVE BEFORE PRODUCTION
+private val TEST_NUMBERS = listOf("7856906972")
+private const val DUMMY_OTP = 123456
+
 @Composable
 fun LoginScreen(navController: NavController) {
 
@@ -121,30 +125,39 @@ fun LoginScreen(navController: NavController) {
                         errorMessage = ""
                         isLoading = true
 
-                        val otp = (100000..999999).random()
+                        // TODO: REMOVE BEFORE PRODUCTION
+                        val isDummyMode = cleanNumber in TEST_NUMBERS
+                        val otp = if (isDummyMode) DUMMY_OTP else (100000..999999).random()
                         val message = "Your OTP for Emaan Wallpapers is $otp"
 
                         scope.launch {
                             try {
-                                // ✅ DLT fields added — required for India SMS delivery
-                                val response = RetrofitClient.api.sendOtp(
-                                    authorization = Fast2SmsConfig.API_KEY,
-                                    message = message,
-                                    numbers = cleanNumber,
-                                    senderId = Fast2SmsConfig.DLT_SENDER_ID,
-                                    peId = Fast2SmsConfig.DLT_PE_ID,
-                                    templateId = Fast2SmsConfig.DLT_TE_ID
-                                )
-
-                                println("HTTP Code: ${response.code()}")
-                                println("Response Body: ${response.body()}")
-
-                                isLoading = false
-
-                                if (response.isSuccessful) {
+                                if (isDummyMode) {
+                                    // ✅ Skip real SMS — saves Fast2SMS tokens
+                                    println("DUMMY MODE: OTP for $cleanNumber is $otp (no SMS sent)")
+                                    isLoading = false
                                     navController.navigate("otp/$otp/$cleanNumber")
                                 } else {
-                                    errorMessage = "Failed to send OTP"
+                                    // ✅ Real SMS for all other numbers
+                                    val response = RetrofitClient.api.sendOtp(
+                                        authorization = Fast2SmsConfig.API_KEY,
+                                        message = message,
+                                        numbers = cleanNumber,
+                                        senderId = Fast2SmsConfig.DLT_SENDER_ID,
+                                        peId = Fast2SmsConfig.DLT_PE_ID,
+                                        templateId = Fast2SmsConfig.DLT_TE_ID
+                                    )
+
+                                    println("HTTP Code: ${response.code()}")
+                                    println("Response Body: ${response.body()}")
+
+                                    isLoading = false
+
+                                    if (response.isSuccessful) {
+                                        navController.navigate("otp/$otp/$cleanNumber")
+                                    } else {
+                                        errorMessage = "Failed to send OTP"
+                                    }
                                 }
 
                             } catch (e: Exception) {
@@ -162,7 +175,6 @@ fun LoginScreen(navController: NavController) {
                         .fillMaxWidth()
                         .height(50.dp)
                 ) {
-
                     if (isLoading) {
                         CircularProgressIndicator(
                             color = Color.Black,

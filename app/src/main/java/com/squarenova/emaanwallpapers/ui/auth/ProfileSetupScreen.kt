@@ -29,16 +29,11 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
-// ✅ Only the fields we're inserting — no id/created_at (Supabase generates those)
 @Serializable
 data class NewUserRow(
     val phone_number: String,
     val first_name: String,
-    val last_name: String,
-    val age: Int?,
-    val country: String,
-    val city: String,
-    val gender: String
+    val last_name: String
 )
 
 @Composable
@@ -50,10 +45,6 @@ fun ProfileSetupScreen(navController: NavController) {
 
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
-    var age by remember { mutableStateOf("") }
-    var country by remember { mutableStateOf("") }
-    var city by remember { mutableStateOf("") }
-    var gender by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
@@ -114,54 +105,10 @@ fun ProfileSetupScreen(navController: NavController) {
                     )
 
                     SetupField(
-                        label = "Last Name",
+                        label = "Last Name *",
                         value = lastName,
                         onValueChange = { lastName = it }
                     )
-
-                    SetupField(
-                        label = "Age",
-                        value = age,
-                        isNumber = true,
-                        onValueChange = { age = it }
-                    )
-
-                    SetupField(
-                        label = "Country",
-                        value = country,
-                        onValueChange = { country = it }
-                    )
-
-                    SetupField(
-                        label = "City",
-                        value = city,
-                        onValueChange = { city = it }
-                    )
-
-                    // Gender chips
-                    Text(
-                        "Gender",
-                        color = Color.White.copy(alpha = 0.65f),
-                        fontSize = 13.sp
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("Male", "Female", "Other").forEach { option ->
-                            FilterChip(
-                                selected = gender == option,
-                                onClick = {
-                                    AnalyticsManager.trackEvent("Profile Setup - Gender Selected", mapOf("gender" to option))
-                                    gender = option
-                                },
-                                label = { Text(option, fontSize = 12.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = goldColor,
-                                    selectedLabelColor = Color.Black,
-                                    containerColor = Color(0xFF0D3B2E),
-                                    labelColor = Color.White
-                                )
-                            )
-                        }
-                    }
                 }
             }
 
@@ -182,9 +129,13 @@ fun ProfileSetupScreen(navController: NavController) {
             Button(
                 onClick = {
                     AnalyticsManager.trackEvent("Profile Setup - Save & Continue Tapped")
-                    // Validate required field
+                    // Validate required fields
                     if (firstName.trim().isEmpty()) {
                         errorMessage = "First name is required"
+                        return@Button
+                    }
+                    if (lastName.trim().isEmpty()) {
+                        errorMessage = "Last name is required"
                         return@Button
                     }
 
@@ -207,11 +158,7 @@ fun ProfileSetupScreen(navController: NavController) {
                                     NewUserRow(
                                         phone_number = phone,
                                         first_name = firstName.trim(),
-                                        last_name = lastName.trim(),
-                                        age = age.toIntOrNull(),
-                                        country = country.trim(),
-                                        city = city.trim(),
-                                        gender = gender
+                                        last_name = lastName.trim()
                                     )
                                 )
 

@@ -2,4 +2,10 @@
 <resources>
 
     <style name="Theme.EmaanWallpapers" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Razorpay CheckoutActivity requires Theme.AppCompat - prevents WebView crash after splash -->
+    <style name="Theme.RazorpayCheckout" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="colorPrimary">#064E3B</item>
+    </style>
 </resources>

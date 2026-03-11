@@ -46,10 +46,7 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
-import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
-import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.service.GifWallpaperService
 import io.github.jan.supabase.postgrest.postgrest
@@ -81,7 +78,8 @@ data class UserRow(
     val country: String? = null,
     val city: String? = null,
     val gender: String? = null,
-    val avatar_url: String? = null
+    val avatar_url: String? = null,
+    val is_subscribed: Boolean? = false
 )
 
 enum class WallpaperFilter(val label: String, val emoji: String, val description: String) {
@@ -140,7 +138,7 @@ fun HomeScreen(navController: NavController) {
     val screenWidth = configuration.screenWidthDp.dp
     val cardHeight = (screenWidth - 24.dp) * (16f / 9f)
 
-    var user by remember { mutableStateOf<User?>(null) }
+    var user by remember { mutableStateOf<UserRow?>(null) }
     var avatarUrl by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
@@ -180,15 +178,7 @@ fun HomeScreen(navController: NavController) {
                     .postgrest["users"]
                     .select(columns = Columns.ALL) { filter { eq("phone_number", phone) } }
                     .decodeSingle<UserRow>()
-                user = User(
-                    phone_number = result.phone_number,
-                    first_name = result.first_name ?: "",
-                    last_name = result.last_name ?: "",
-                    age = result.age ?: 0,
-                    country = result.country ?: "",
-                    city = result.city ?: "",
-                    gender = result.gender ?: ""
-                )
+                user = result
                 avatarUrl = result.avatar_url
             }
         } catch (e: Exception) {
@@ -259,8 +249,7 @@ fun HomeScreen(navController: NavController) {
                                 if (isSelected) darkGreen.copy(alpha = 0.6f)
                                 else Color.White.copy(alpha = 0.05f)
                             )
-                            .smoothClickable {
-                                AnalyticsManager.trackEvent("Home - Filter Selected", mapOf("filter" to filter.label))
+                            .clickable {
                                 activeFilter = filter
                                 showFilterSheet = false
                             }
@@ -327,41 +316,39 @@ fun HomeScreen(navController: NavController) {
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .smoothClickable {
-                            AnalyticsManager.trackEvent("Home - Profile Avatar Tapped")
-                            navController.navigate("profile")
-                        }
-                        .size(46.dp)
-                        .align(Alignment.CenterEnd)
-                        .clip(CircleShape),
-                    contentAlignment = Alignment.Center
+                IconButton(
+                    onClick = { navController.navigate("profile") },
+                    modifier = Modifier.size(46.dp).align(Alignment.CenterEnd)
                 ) {
-                    if (!avatarUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(avatarUrl).crossfade(true).build(),
-                            contentDescription = "Profile",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(46.dp).clip(CircleShape)
-                        )
-                    } else {
-                        Surface(
-                            shape = CircleShape,
-                            color = goldColor,
-                            modifier = Modifier.size(46.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = user?.first_name
-                                        ?.firstOrNull()
-                                        ?.uppercaseChar()
-                                        ?.toString() ?: "?",
-                                    color = Color.Black,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                    Box(
+                        modifier = Modifier.size(46.dp).clip(CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!avatarUrl.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(avatarUrl).crossfade(true).build(),
+                                contentDescription = "Profile",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(46.dp).clip(CircleShape)
+                            )
+                        } else {
+                            Surface(
+                                shape = CircleShape,
+                                color = goldColor,
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = user?.first_name
+                                            ?.firstOrNull()
+                                            ?.uppercaseChar()
+                                            ?.toString() ?: "?",
+                                        color = Color.Black,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -388,10 +375,7 @@ fun HomeScreen(navController: NavController) {
                                 if (activeFilter != WallpaperFilter.ALL) darkGreen
                                 else Color(0xFFF0F0F0)
                             )
-                            .smoothClickable {
-                                AnalyticsManager.trackEvent("Home - Filter Tapped")
-                                showFilterSheet = true
-                            },
+                            .clickable { showFilterSheet = true },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -409,7 +393,6 @@ fun HomeScreen(navController: NavController) {
                         FilterChip(
                             selected = selectedCategory == category,
                             onClick = {
-                                AnalyticsManager.trackEvent("Home - Category Selected", mapOf("category" to category))
                                 selectedCategory =
                                     if (selectedCategory == category) null else category
                             },
@@ -466,7 +449,6 @@ fun HomeScreen(navController: NavController) {
                                 title = liveWallpaper.title,
                                 cardHeight = cardHeight,
                                 onSetLiveWallpaper = {
-                                    AnalyticsManager.trackEvent("Home - Set Live Wallpaper Tapped", mapOf("wallpaper_id" to liveWallpaper.id))
                                     setLiveWallpaper(context, liveWallpaper.url)
                                     snackbarIsSuccess = true
                                     snackbarMessage = "Opening live wallpaper picker ✅"
@@ -506,7 +488,6 @@ fun HomeScreen(navController: NavController) {
                                 isSettingWallpaper = settingWallpaperUrl == wallpaper.url,
                                 onSetWallpaper = {
                                     if (settingWallpaperUrl != null) return@WallpaperCard
-                                    AnalyticsManager.trackEvent("Home - Set Wallpaper Tapped", mapOf("wallpaper_id" to wallpaper.id, "category" to wallpaper.category))
                                     settingWallpaperUrl = wallpaper.url
                                     scope.launch {
                                         val result = setWallpaper(context, wallpaper.url)
@@ -764,7 +745,7 @@ fun WallpaperCard(
                     )
                 } else {
                     Text(
-                        "Set Wallpaper",
+                        "🖼️  Set Wallpaper",
                         color = Color.Black,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp

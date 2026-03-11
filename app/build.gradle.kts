@@ -45,7 +45,13 @@ android {
 }
 
 dependencies {
-    // coil gif dependency and Mp4 vidoes
+    // ✅ Material Design - Compatible with Razorpay (latest stable)
+    implementation("com.google.android.material:material:1.12.0")
+
+    // ✅ Razorpay dependency
+    implementation("com.razorpay:checkout:1.6.33")
+
+    // Coil gif dependency and Mp4 videos
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")
     implementation("io.coil-kt:coil-gif:2.6.0")
