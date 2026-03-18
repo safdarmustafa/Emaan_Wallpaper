@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.input.KeyboardType
@@ -20,10 +21,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.network.Fast2SmsConfig
+import com.squarenova.emaanwallpapers.network.RetrofitClient
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.ui.profile.UserRow
 import io.github.jan.supabase.postgrest.postgrest
+import android.util.Log
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+
+// Keep same dummy-mode as LoginScreen for your test number(s).
+private val TEST_NUMBERS = listOf("7856906972")
+private const val DUMMY_OTP = 123456
 
 @Composable
 fun OtpScreen(
@@ -35,10 +44,26 @@ fun OtpScreen(
     var enteredOtp by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     var isVerifying by remember { mutableStateOf(false) }
+    // Latest OTP (initially the one passed from Login, then updates after resend).
+    var currentOtp by remember { mutableStateOf(sentOtp) }
 
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
     val scope = rememberCoroutineScope()
+
+    // Resend OTP countdown
+    var resendTimerKey by remember { mutableIntStateOf(0) }
+    var remainingSeconds by remember { mutableIntStateOf(30) }
+    var isResending by remember { mutableStateOf(false) }
+    var resendMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(resendTimerKey) {
+        remainingSeconds = 30
+        while (remainingSeconds > 0) {
+            delay(1000)
+            remainingSeconds -= 1
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -90,13 +115,28 @@ fun OtpScreen(
 
                 OutlinedTextField(
                     value = enteredOtp,
-                    onValueChange = { enteredOtp = it },
-                    label = { Text("Enter OTP") },
+                    onValueChange = { input ->
+                        // Digits only, max 6 chars
+                        val digitsOnly = input.filter { it.isDigit() }.take(6)
+                        enteredOtp = digitsOnly
+                        if (errorMessage.isNotEmpty()) errorMessage = ""
+                    },
+                    label = { Text("Enter OTP", color = Color.Black.copy(alpha = 0.65f)) },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number
                     ),
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = TextStyle(color = Color.Black),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black,
+                        focusedBorderColor = Color(0xFFD4AF37),
+                        unfocusedBorderColor = Color.Black.copy(alpha = 0.25f),
+                        cursorColor = Color.Black,
+                        focusedLabelColor = Color.Black.copy(alpha = 0.65f),
+                        unfocusedLabelColor = Color.Black.copy(alpha = 0.65f)
+                    )
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -113,7 +153,7 @@ fun OtpScreen(
                 Button(
                     onClick = {
                         // TODO: REMOVE "123456" BEFORE PRODUCTION
-                        if (enteredOtp == sentOtp || enteredOtp == "123456") {
+                        if (enteredOtp == currentOtp || enteredOtp == "123456") {
                             scope.launch {
                                 isVerifying = true
                                 try {
@@ -190,6 +230,71 @@ fun OtpScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                TextButton(
+                    enabled = remainingSeconds == 0 && !isResending,
+                    onClick = {
+                        if (isResending) return@TextButton
+                        resendMessage = null
+                        errorMessage = ""
+
+                        isResending = true
+                        scope.launch {
+                            try {
+                                // Generate a new OTP (matches LoginScreen logic)
+                                val cleanPhone = phone.filter { it.isDigit() }
+                                val isDummyMode = cleanPhone in TEST_NUMBERS
+                                val newOtp = if (isDummyMode) DUMMY_OTP else (100000..999999).random()
+                                val message = "Your OTP for Emaan Wallpapers is $newOtp"
+
+                                if (isDummyMode) {
+                                    // No SMS in dummy mode
+                                    Log.d("OTP_SCREEN", "DUMMY MODE resend OTP=$newOtp for $cleanPhone")
+                                } else {
+                                    RetrofitClient.api.sendOtp(
+                                        authorization = Fast2SmsConfig.API_KEY,
+                                        message = message,
+                                        numbers = cleanPhone,
+                                        senderId = Fast2SmsConfig.DLT_SENDER_ID,
+                                        peId = Fast2SmsConfig.DLT_PE_ID,
+                                        templateId = Fast2SmsConfig.DLT_TE_ID
+                                    )
+                                }
+
+                                currentOtp = newOtp.toString()
+                                resendMessage = "OTP sent successfully."
+                                // Restart countdown
+                                resendTimerKey += 1
+                            } catch (e: Exception) {
+                                Log.e("OTP_SCREEN_RESEND", e.message ?: "Unknown", e)
+                                resendMessage = "Failed to resend OTP. Try again."
+                            } finally {
+                                isResending = false
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = if (remainingSeconds > 0) {
+                            "Resend OTP in ${remainingSeconds}s"
+                        } else {
+                            if (isResending) "Resending..." else "Resend OTP"
+                        },
+                        color = Color(0xFF0F5132),
+                        fontSize = 13.sp
+                    )
+                }
+
+                if (!resendMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = resendMessage ?: "",
+                        color = if (resendMessage?.contains("Failed", ignoreCase = true) == true) Color.Red else Color(0xFF0F5132),
+                        fontSize = 12.sp
+                    )
                 }
             }
         }

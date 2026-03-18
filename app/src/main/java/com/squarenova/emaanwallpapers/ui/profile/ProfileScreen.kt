@@ -114,9 +114,22 @@ fun ProfileScreen(navController: NavController) {
                             filter { eq("phone_number", phone) }
                         }
 
-                    // ✅ Update UI immediately
+                    // ✅ Verify DB update (so Home screen reflects the change)
+                    val updated = SupabaseClient.client
+                        .postgrest["users"]
+                        .select {
+                            filter { eq("phone_number", phone) }
+                        }
+                        .decodeSingle<UserRow>()
+
+                    Log.d("AVATAR_DB_VERIFY", "uploaded=$publicUrl db=${updated.avatar_url}")
+
                     avatarUrl = publicUrl
-                    saveMessage = "Profile picture updated ✅"
+                    saveMessage = if (updated.avatar_url == publicUrl) {
+                        "Profile picture updated ✅"
+                    } else {
+                        "Uploaded image, but DB avatar_url did not update ❌"
+                    }
 
                 } catch (e: Exception) {
                     Log.e("AVATAR_UPLOAD_ERROR", e.message ?: "Unknown")
@@ -214,6 +227,12 @@ fun ProfileScreen(navController: NavController) {
     val background = lightGreen
 
     val headerGradient = Brush.verticalGradient(listOf(background, background))
+
+    val avatarInitial = user?.first_name
+        ?.firstOrNull()
+        ?.uppercaseChar()
+        ?.toString()
+        ?: "?"
 
     Box(
         modifier = Modifier
@@ -316,39 +335,40 @@ fun ProfileScreen(navController: NavController) {
                                         }
                                     }
                                 }
-                                // ✅ Show saved avatar from Supabase
-                                avatarUrl != null -> {
-                                    AsyncImage(
-                                        model = avatarUrl,
-                                        contentDescription = "Profile Picture",
-                                        contentScale = ContentScale.Crop,
+                                else -> {
+                                    // Always show a gold circle + initials.
+                                    // If the image fails to load, initials will still be visible.
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .clip(CircleShape)
-                                    )
-                                }
-                                // Show initial letter fallback
-                                else -> {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = goldColor,
-                                        modifier = Modifier.fillMaxSize()
+                                            .background(goldColor),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            if (isLoading) {
-                                                CircularProgressIndicator(
-                                                    color = Color.Black,
-                                                    modifier = Modifier.size(28.dp),
-                                                    strokeWidth = 2.dp
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = user?.first_name?.firstOrNull()?.toString() ?: "?",
-                                                    fontSize = 42.sp,
-                                                    color = Color.Black,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                        if (!avatarUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = avatarUrl,
+                                                contentDescription = "Profile Picture",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clip(CircleShape)
+                                            )
+                                        }
+
+                                        if (isLoading) {
+                                            CircularProgressIndicator(
+                                                color = Color.Black,
+                                                modifier = Modifier.size(28.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else {
+                                            Text(
+                                                text = avatarInitial,
+                                                fontSize = 42.sp,
+                                                color = Color.Black,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
                                     }
                                 }

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +37,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -139,8 +143,12 @@ fun HomeScreen(navController: NavController) {
     val cardHeight = (screenWidth - 24.dp) * (16f / 9f)
 
     var user by remember { mutableStateOf<UserRow?>(null) }
-    var avatarUrl by remember { mutableStateOf<String?>(null) }
+    // Cache so header doesn't show '?' for a moment when returning from Profile.
+    var avatarUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var cachedFirstName by rememberSaveable { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var allWallpapers by remember { mutableStateOf<List<WallpaperRow>>(emptyList()) }
     var liveWallpapers by remember { mutableStateOf<List<LiveWallpaperRow>>(emptyList()) }
@@ -155,7 +163,7 @@ fun HomeScreen(navController: NavController) {
     var showFilterSheet by remember { mutableStateOf(false) }
 
     // null = no category selected (show all)
-    val categories = listOf("kaaba", "Madinah", "Quran", "Mosque", "Islamic Quotes", "Ramadan", "Allah")
+    val categories = listOf("Kaaba", "Madinah", "Quran", "Mosque", "Islamic Quotes", "Ramadan", "Allah")
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     val filteredStatic = remember(selectedCategory, allWallpapers) {
@@ -176,10 +184,19 @@ fun HomeScreen(navController: NavController) {
             if (!phone.isNullOrEmpty()) {
                 val result = SupabaseClient.client
                     .postgrest["users"]
-                    .select(columns = Columns.ALL) { filter { eq("phone_number", phone) } }
+                    .select(
+                        columns = Columns.list(
+                            "phone_number",
+                            "first_name",
+                            "last_name",
+                            "avatar_url",
+                            "is_subscribed"
+                        )
+                    ) { filter { eq("phone_number", phone) } }
                     .decodeSingle<UserRow>()
                 user = result
                 avatarUrl = result.avatar_url
+                cachedFirstName = result.first_name
             }
         } catch (e: Exception) {
             Log.e("HOME_USER_ERROR", e.message ?: "Unknown")
@@ -188,11 +205,47 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
+    // ✅ Refresh avatar when returning from Profile so UI reflects latest image
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    try {
+                        val phone = dataStoreManager.phoneNumber.firstOrNull()
+                        if (!phone.isNullOrEmpty()) {
+                            val result = SupabaseClient.client
+                                .postgrest["users"]
+                                .select(
+                                    columns = Columns.list(
+                                        "phone_number",
+                                        "first_name",
+                                        "last_name",
+                                        "avatar_url",
+                                        "is_subscribed"
+                                    )
+                                ) { filter { eq("phone_number", phone) } }
+                                .decodeSingle<UserRow>()
+                            user = result
+                            avatarUrl = result.avatar_url
+                            cachedFirstName = result.first_name
+                        }
+                    } catch (e: Exception) {
+                        Log.e("HOME_USER_REFRESH_ERROR", e.message ?: "Unknown")
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(Unit) {
         isWallpaperLoading = true
         try {
             allWallpapers = SupabaseClient.client
-                .postgrest["wallpapers"].select(columns = Columns.ALL).decodeList()
+                .postgrest["wallpapers"]
+                .select(columns = Columns.list("id", "category", "url"))
+                .decodeList()
         } catch (e: Exception) {
             Log.e("WALLPAPER_ERROR", e.message ?: "Unknown")
         } finally { isWallpaperLoading = false }
@@ -202,7 +255,9 @@ fun HomeScreen(navController: NavController) {
         isLiveLoading = true
         try {
             liveWallpapers = SupabaseClient.client
-                .postgrest["live_wallpapers"].select(columns = Columns.ALL).decodeList()
+                .postgrest["live_wallpapers"]
+                .select(columns = Columns.list("id", "url", "title"))
+                .decodeList()
         } catch (e: Exception) {
             Log.e("LIVE_WALLPAPER_ERROR", e.message ?: "Unknown")
         } finally { isLiveLoading = false }
@@ -310,7 +365,7 @@ fun HomeScreen(navController: NavController) {
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (!isLoading) user?.first_name ?: "Guest" else "",
+                        text = if (!isLoading) (user?.first_name ?: cachedFirstName) ?: "Guest" else "",
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -321,36 +376,44 @@ fun HomeScreen(navController: NavController) {
                     modifier = Modifier.size(46.dp).align(Alignment.CenterEnd)
                 ) {
                     Box(
-                        modifier = Modifier.size(46.dp).clip(CircleShape),
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            // Always show a visible circle even if image fails
+                            .background(goldColor),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (!avatarUrl.isNullOrEmpty()) {
+                        val initial = user?.first_name
+                            ?.firstOrNull()
+                            ?.uppercaseChar()
+                            ?.toString()
+                            ?: cachedFirstName
+                                ?.firstOrNull()
+                                ?.uppercaseChar()
+                                ?.toString()
+                            ?: "?"
+
+                        if (!avatarUrl.isNullOrBlank()) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(avatarUrl).crossfade(true).build(),
+                                    .data(avatarUrl)
+                                    .crossfade(true)
+                                    .build(),
                                 contentDescription = "Profile",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(46.dp).clip(CircleShape)
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
                             )
-                        } else {
-                            Surface(
-                                shape = CircleShape,
-                                color = goldColor,
-                                modifier = Modifier.size(46.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = user?.first_name
-                                            ?.firstOrNull()
-                                            ?.uppercaseChar()
-                                            ?.toString() ?: "?",
-                                        color = Color.Black,
-                                        fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
                         }
+
+                        // Draw initials last so they remain visible even if the image can't load.
+                        Text(
+                            text = initial,
+                            color = Color.Black,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

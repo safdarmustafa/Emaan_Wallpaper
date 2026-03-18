@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,13 +91,28 @@ fun LoginScreen(navController: NavController) {
 
                 OutlinedTextField(
                     value = phoneNumber,
-                    onValueChange = { phoneNumber = it },
-                    label = { Text("Phone Number") },
+                    onValueChange = { input ->
+                        // Digits only, max 10 chars
+                        val digitsOnly = input.filter { it.isDigit() }.take(10)
+                        phoneNumber = digitsOnly
+                        if (errorMessage.isNotEmpty()) errorMessage = ""
+                    },
+                    label = { Text("Phone Number", color = Color.Black.copy(alpha = 0.65f)) },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Phone
                     ),
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = TextStyle(color = Color.Black),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black,
+                        focusedBorderColor = Color(0xFFD4AF37),
+                        unfocusedBorderColor = Color.Black.copy(alpha = 0.25f),
+                        cursorColor = Color.Black,
+                        focusedLabelColor = Color.Black.copy(alpha = 0.65f),
+                        unfocusedLabelColor = Color.Black.copy(alpha = 0.65f)
+                    )
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))

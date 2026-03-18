@@ -37,7 +37,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -116,15 +120,18 @@ suspend fun shareVideoToWhatsApp(context: Context, url: String, title: String?):
 
             val uri = FileProvider.getUriForFile(
                 context,
-                "${BuildConfig.APPLICATION_ID}.fileprovider",
+                // Must match AndroidManifest.xml provider authority: `${applicationId}.file_provider`
+                "${BuildConfig.APPLICATION_ID}.file_provider",
                 file
             )
 
             withContext(Dispatchers.Main) {
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "video/*"
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "video/*"
                     putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        // Grant WhatsApp permission to read the temp shared file
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                     setPackage("com.whatsapp")
                 }
                 context.startActivity(intent)
@@ -329,6 +336,8 @@ fun ReelItem(
     onWhatsApp: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentIsVisible by rememberUpdatedState(isVisible)
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(false) }
 
@@ -359,6 +368,29 @@ fun ReelItem(
             exoPlayer.stop()
             exoPlayer.release()
         }
+    }
+
+    // ✅ Stop playback when app goes background or screen is paused.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP -> {
+                    exoPlayer.playWhenReady = false
+                    exoPlayer.pause()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    // If user returns to this screen and this reel is visible, resume playback.
+                    if (currentIsVisible) {
+                        exoPlayer.playWhenReady = true
+                        exoPlayer.play()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
