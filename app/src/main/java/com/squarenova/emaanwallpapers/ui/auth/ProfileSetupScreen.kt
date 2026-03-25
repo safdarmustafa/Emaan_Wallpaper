@@ -30,6 +30,12 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 @Serializable
+private data class SubscriptionCheckRow(
+    val phone_number: String? = null,
+    val is_subscribed: Boolean? = false
+)
+
+@Serializable
 data class NewUserRow(
     val phone_number: String,
     val first_name: String,
@@ -164,8 +170,28 @@ fun ProfileSetupScreen(navController: NavController) {
 
                             // ✅ Mark profile as completed and go home
                             dataStoreManager.setProfileCompleted()
-                            navController.navigate("home") {
-                                popUpTo("profile_setup") { inclusive = true }
+
+                            val isSubscribed = try {
+                                SupabaseClient.client
+                                    .postgrest["users"]
+                                    .select { filter { eq("phone_number", phone) } }
+                                    .decodeList<SubscriptionCheckRow>()
+                                    .firstOrNull()
+                                    ?.is_subscribed == true
+                            } catch (e: Exception) {
+                                false
+                            }
+
+                            if (isSubscribed) {
+                                dataStoreManager.setSubscribed()
+                                navController.navigate("home") {
+                                    popUpTo("profile_setup") { inclusive = true }
+                                }
+                            } else {
+                                dataStoreManager.setUnsubscribed()
+                                navController.navigate("subscription") {
+                                    popUpTo("profile_setup") { inclusive = true }
+                                }
                             }
 
                         } catch (e: Exception) {
@@ -203,8 +229,31 @@ fun ProfileSetupScreen(navController: NavController) {
             // Skip option (optional — remove if you want to force setup)
             TextButton(onClick = {
                 AnalyticsManager.trackEvent("Profile Setup - Skip Tapped")
-                navController.navigate("home") {
-                    popUpTo("profile_setup") { inclusive = true }
+                scope.launch {
+                    val phone = dataStoreManager.phoneNumber.firstOrNull()
+                    if (!phone.isNullOrEmpty()) {
+                        // Create a minimal row so subscription webhooks can update this user by phone.
+                        val safeFirst = firstName.trim().ifEmpty { "User" }
+                        val safeLast = lastName.trim().ifEmpty { "User" }
+                        try {
+                            SupabaseClient.client
+                                .postgrest["users"]
+                                .insert(
+                                    NewUserRow(
+                                        phone_number = phone,
+                                        first_name = safeFirst,
+                                        last_name = safeLast
+                                    )
+                                )
+                        } catch (_: Exception) {
+                            // Ignore insert failures (e.g., duplicate row).
+                        }
+                    }
+                    dataStoreManager.setProfileCompleted()
+                    dataStoreManager.setUnsubscribed()
+                    navController.navigate("subscription") {
+                        popUpTo("profile_setup") { inclusive = true }
+                    }
                 }
             }) {
                 Text(

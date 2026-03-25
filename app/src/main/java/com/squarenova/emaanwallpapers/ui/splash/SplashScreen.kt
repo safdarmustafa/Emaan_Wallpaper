@@ -18,8 +18,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.network.SupabaseClient
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.Serializable
+
+@Serializable
+private data class SubscriptionUserRow(
+    val phone_number: String? = null,
+    val is_subscribed: Boolean? = false,
+    val subscription_status: String? = null
+)
 
 @Composable
 fun SplashScreen(navController: NavController) {
@@ -55,8 +66,44 @@ fun SplashScreen(navController: NavController) {
             }
 
             else -> {
-                navController.navigate("home") {
-                    popUpTo("splash") { inclusive = true }
+                val phone = dataStoreManager.phoneNumber.firstOrNull()
+
+                if (phone.isNullOrBlank()) {
+                    navController.navigate("login") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                    return@LaunchedEffect
+                }
+
+                val localSubscribed = dataStoreManager.isSubscribed.first()
+                val serverSubscribed = try {
+                    val result = SupabaseClient.client
+                        .postgrest["users"]
+                        .select { filter { eq("phone_number", phone) } }
+                        .decodeList<SubscriptionUserRow>()
+                        .firstOrNull()
+
+                    // During trial, `is_subscribed` may stay `false`.
+                    // Treat "not expired" as access granted so the user can use the app during trial.
+                    val status = result?.subscription_status?.lowercase()
+                    val isExpired = status == "expired"
+                    (result?.is_subscribed == true) || (status != null && !isExpired)
+                } catch (e: Exception) {
+                    null
+                }
+
+                val isSubscribed = serverSubscribed == true || localSubscribed
+
+                if (isSubscribed) {
+                    dataStoreManager.setSubscribed()
+                    navController.navigate("home") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                } else {
+                    dataStoreManager.setUnsubscribed()
+                    navController.navigate("subscription") {
+                        popUpTo("splash") { inclusive = true }
+                    }
                 }
             }
         }

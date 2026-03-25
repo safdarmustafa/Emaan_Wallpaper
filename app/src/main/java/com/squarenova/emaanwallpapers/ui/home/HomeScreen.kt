@@ -56,10 +56,12 @@ import com.squarenova.emaanwallpapers.service.GifWallpaperService
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import androidx.compose.runtime.produceState
 
 // ─────────────────────────────────────────
 // Models
@@ -84,6 +86,8 @@ data class UserRow(
     val gender: String? = null,
     val avatar_url: String? = null,
     val is_subscribed: Boolean? = false
+    ,
+    val subscription_status: String? = null
 )
 
 enum class WallpaperFilter(val label: String, val emoji: String, val description: String) {
@@ -136,6 +140,14 @@ fun HomeScreen(navController: NavController) {
 
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
+    // Avoid "initial false" race; only redirect once we actually read the datastore value.
+    val localSubscribedState = produceState<Boolean?>(initialValue = null) {
+        // Observe changes so if payment completes just before/after navigation,
+        // we won't incorrectly redirect to subscription.
+        dataStoreManager.isSubscribed.collect { subscribed ->
+            value = subscribed
+        }
+    }
     val configuration = LocalConfiguration.current
     val scope = rememberCoroutineScope()
 
@@ -166,6 +178,48 @@ fun HomeScreen(navController: NavController) {
     val categories = listOf("Kaaba", "Madinah", "Quran", "Mosque", "Islamic Quotes", "Ramadan", "Allah")
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
+    var redirectedToSubscription by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isLoading, user?.is_subscribed, user?.subscription_status, localSubscribedState.value) {
+        val localSubscribed = localSubscribedState.value
+        val hasPremiumAccess =
+            user?.is_subscribed == true ||
+                (user?.subscription_status?.lowercase() != null &&
+                    user?.subscription_status?.lowercase() != "expired") ||
+                localSubscribed == true
+
+        // Only redirect once we have enough info to decide.
+        // If payment just succeeded, local datastore might not have propagated yet.
+        val hasLoadedAccessSignals =
+            user?.subscription_status != null || localSubscribedState.value != null
+
+        if (!isLoading && !redirectedToSubscription && hasLoadedAccessSignals && !hasPremiumAccess) {
+            Log.d(
+                "HOME_ACCESS_GUARD",
+                "Redirecting soon: hasPremiumAccess=$hasPremiumAccess localSubscribed=${localSubscribedState.value} userStatus=${user?.subscription_status} userSubscribed=${user?.is_subscribed}"
+            )
+            delay(300)
+            // Re-check after grace delay (state may have updated).
+            val localSubscribedNow = localSubscribedState.value == true
+            val statusNow = user?.subscription_status?.lowercase()
+            val hasPremiumAccessNow =
+                user?.is_subscribed == true ||
+                    (statusNow != null && statusNow != "expired") ||
+                    localSubscribedNow
+
+            if (!redirectedToSubscription && !hasPremiumAccessNow) {
+                Log.d(
+                    "HOME_ACCESS_GUARD",
+                    "Redirecting: hasPremiumAccessNow=$hasPremiumAccessNow localSubscribedNow=$localSubscribedNow statusNow=$statusNow"
+                )
+                redirectedToSubscription = true
+                navController.navigate("subscription") {
+                    popUpTo("home") { inclusive = true }
+                }
+            }
+        }
+    }
+
     val filteredStatic = remember(selectedCategory, allWallpapers) {
         if (selectedCategory == null) allWallpapers
         else allWallpapers.filter { it.category == selectedCategory }
@@ -190,7 +244,8 @@ fun HomeScreen(navController: NavController) {
                             "first_name",
                             "last_name",
                             "avatar_url",
-                            "is_subscribed"
+                            "is_subscribed",
+                            "subscription_status"
                         )
                     ) { filter { eq("phone_number", phone) } }
                     .decodeSingle<UserRow>()
@@ -221,7 +276,8 @@ fun HomeScreen(navController: NavController) {
                                         "first_name",
                                         "last_name",
                                         "avatar_url",
-                                        "is_subscribed"
+                                        "is_subscribed",
+                                        "subscription_status"
                                     )
                                 ) { filter { eq("phone_number", phone) } }
                                 .decodeSingle<UserRow>()

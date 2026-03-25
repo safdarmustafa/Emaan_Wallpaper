@@ -1,51 +1,69 @@
 // @ts-nocheck
+
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 serve(async (req: Request) => {
 
-  if (req.method === "OPTIONS") {
-    return new Response("OK", {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      }
-    });
-  }
-
   try {
 
-    const { plan_id } = await req.json();
+    const { phone } = await req.json();
 
     const keyId = Deno.env.get("RAZORPAY_KEY_ID");
     const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
 
-    const encodedAuth = btoa(`${keyId}:${keySecret}`);
+    const auth = btoa(`${keyId}:${keySecret}`);
 
-    const response = await fetch("https://api.razorpay.com/v1/subscriptions", {
+    // 🔥 CREATE SUBSCRIPTION (3 DAYS TRIAL)
+    const res = await fetch("https://api.razorpay.com/v1/subscriptions", {
       method: "POST",
       headers: {
-        "Authorization": `Basic ${encodedAuth}`,
+        "Authorization": `Basic ${auth}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        plan_id: plan_id,
+        plan_id: "plan_SUjMMDAgQKiHOy",
         total_count: 12,
-        customer_notify: 1
+        customer_notify: 1,
+
+        // 🔥 TRIAL → 3 DAYS
+        start_at: Math.floor(Date.now() / 1000) + (3 * 24 * 60 * 60)
       })
     });
 
-    const result = await response.json();
+    const data = await res.json();
 
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
+    if (!data.id) {
+      return new Response(JSON.stringify({
+        error: "Subscription creation failed",
+        details: data
+      }), { status: 500 });
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL"),
+      Deno.env.get("SERVICE_ROLE_KEY")
+    );
+
+    // 🔥 IMPORTANT FIX
+    await supabase
+      .from("users")
+      .update({
+        razorpay_subscription_id: data.id,
+        subscription_status: data.status,
+
+        // ❌ DO NOT ACTIVATE HERE
+        is_subscribed: false
+      })
+      .eq("phone_number", phone);
+
+    return new Response(JSON.stringify({
+      subscription_id: data.id
+    }), { status: 200 });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500
-    });
+    return new Response(JSON.stringify({
+      error: err.message
+    }), { status: 500 });
   }
 });

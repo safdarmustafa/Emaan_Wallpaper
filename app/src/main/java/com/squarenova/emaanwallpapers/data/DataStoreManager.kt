@@ -49,6 +49,11 @@ class DataStoreManager(private val context: Context) {
         context.dataStore.edit { it[IS_SUBSCRIBED] = true }
     }
 
+    // ✅ NEW — called after successful subscription cancellation
+    suspend fun setUnsubscribed() {
+        context.dataStore.edit { it[IS_SUBSCRIBED] = false }
+    }
+
     suspend fun logout() {
         context.dataStore.edit { it.clear() }
     }

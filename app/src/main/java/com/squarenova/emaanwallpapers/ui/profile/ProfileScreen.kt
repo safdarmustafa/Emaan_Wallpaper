@@ -39,6 +39,7 @@ import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.delay
@@ -54,7 +55,9 @@ data class UserRow(
     val first_name: String? = null,
     val last_name: String? = null,
     val avatar_url: String? = null,
-    val is_subscribed: Boolean? = null
+    val is_subscribed: Boolean? = null,
+    val razorpay_subscription_id: String? = null,
+    val subscription_status: String? = null
 )
 
 @Serializable
@@ -78,6 +81,31 @@ fun ProfileScreen(navController: NavController) {
     var isSaving by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    var isSubscribed by remember { mutableStateOf(false) }
+    var razorpaySubscriptionId by remember { mutableStateOf<String?>(null) }
+    var subscriptionStatus by remember { mutableStateOf<String?>(null) }
+    var showCancelDialog by remember { mutableStateOf(false) }
+    var isCancelling by remember { mutableStateOf(false) }
+
+    suspend fun refreshSubscriptionState() {
+        val phone = dataStoreManager.phoneNumber.firstOrNull()
+        if (phone.isNullOrEmpty()) return
+
+        try {
+            val result = SupabaseClient.client
+                .postgrest["users"]
+                .select {
+                    filter { eq("phone_number", phone) }
+                }
+                .decodeSingle<UserRow>()
+
+            isSubscribed = result.is_subscribed == true
+            razorpaySubscriptionId = result.razorpay_subscription_id
+            subscriptionStatus = result.subscription_status
+        } catch (e: Exception) {
+            Log.e("PROFILE_SUBSCRIPTION_REFRESH", e.message ?: "Unknown")
+        }
+    }
 
     // ✅ Gallery picker — uploads immediately on pick
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -161,6 +189,9 @@ fun ProfileScreen(navController: NavController) {
 
                 // ✅ Load saved avatar URL
                 avatarUrl = result.avatar_url
+                isSubscribed = result.is_subscribed == true
+                razorpaySubscriptionId = result.razorpay_subscription_id
+                subscriptionStatus = result.subscription_status
             }
         } catch (e: Exception) {
             Log.e("PROFILE_ERROR", e.message ?: "Unknown error")
@@ -213,6 +244,40 @@ fun ProfileScreen(navController: NavController) {
                         isSaving = false
                         saveMessage = "Failed: ${e.message} ❌"
                         Log.e("PROFILE_SAVE_ERROR", e.message ?: "Unknown")
+                    }
+                }
+            }
+        )
+    }
+
+    if (showCancelDialog) {
+        CancelSubscriptionDialog(
+            isCancelling = isCancelling,
+            onDismiss = { showCancelDialog = false },
+            onConfirm = {
+                scope.launch {
+                    isCancelling = true
+                    try {
+                        val subId = razorpaySubscriptionId
+                        if (subId.isNullOrBlank()) {
+                            saveMessage = "Subscription not found ❌"
+                            return@launch
+                        }
+
+                        val result = SubscriptionApi.cancelSubscription(subId)
+                        if (result.isSuccess) {
+                            saveMessage = "Cancellation requested ✅"
+                            // Keep premium access active until the expiry webhook updates Supabase.
+                            showCancelDialog = false
+                            refreshSubscriptionState()
+                        } else {
+                            val e = result.exceptionOrNull()
+                            saveMessage = e?.message ?: "Failed to cancel subscription ❌"
+                        }
+                    } catch (e: Exception) {
+                        saveMessage = e.message ?: "Failed to cancel subscription ❌"
+                    } finally {
+                        isCancelling = false
                     }
                 }
             }
@@ -450,12 +515,25 @@ fun ProfileScreen(navController: NavController) {
                 }
                 ProfileItem(
                     icon = "👑",
-                    title = "Upgrade to Premium",
-                    subtitle = "Unlock exclusive wallpapers",
+                    title = if (isSubscribed) "Cancel Subscription" else "Upgrade to Premium",
+                    subtitle = if (isSubscribed)
+                        if (subscriptionStatus == "cancelled") {
+                            "Your plan will end after current billing period"
+                        } else {
+                            "Stop future premium payments"
+                        }
+                    else
+                        "Unlock exclusive wallpapers",
                     containerColor = Color(0xFFF1F8E9),
                     titleColor = darkGreen
                 ) {
-                    AnalyticsManager.trackEvent("Profile - Upgrade Premium Tapped")
+                    AnalyticsManager.trackEvent(
+                        if (isSubscribed) "Profile - Cancel Subscription Tapped"
+                        else "Profile - Upgrade Premium Tapped"
+                    )
+                    if (isSubscribed) {
+                        showCancelDialog = true
+                    }
                 }
                 ProfileItem(
                     icon = "📤",
@@ -515,6 +593,7 @@ fun ProfileScreen(navController: NavController) {
         }
     }
 }
+
 
 @Composable
 fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onSave: (User) -> Unit) {
@@ -681,6 +760,72 @@ fun ProfileItem(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Light
             )
+        }
+    }
+}
+
+@Composable
+fun CancelSubscriptionDialog(
+    isCancelling: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A4A38)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    "Cancel Premium Subscription",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                Text(
+                    "We will cancel your premium at the end of the current billing cycle.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 13.sp
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                    ) { Text("No") }
+
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        enabled = !isCancelling,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C))
+                    ) {
+                        if (isCancelling) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Yes, cancel", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
     }
 }

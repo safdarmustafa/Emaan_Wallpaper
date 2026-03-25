@@ -4,14 +4,8 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
-// ─────────────────────────────────────────
-// SubscriptionManager
-// Razorpay callbacks come to MainActivity,
-// this object bridges them to SubscriptionScreen
-// ─────────────────────────────────────────
 object SubscriptionManager {
 
-    // ✅ SharedFlow — emits payment result to whoever is listening
     private val _paymentResult = MutableSharedFlow<PaymentResult>(extraBufferCapacity = 1)
     val paymentResult = _paymentResult.asSharedFlow()
 

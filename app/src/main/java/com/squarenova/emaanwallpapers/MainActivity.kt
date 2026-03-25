@@ -1,6 +1,7 @@
 package com.squarenova.emaanwallpapers
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,7 +14,9 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
+
         setContent {
             EmaanWallpapersTheme {
                 AppNavGraph()
@@ -21,13 +24,25 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
         }
     }
 
-    // ✅ Razorpay calls this on successful payment
+    // ✅ PAYMENT SUCCESS
     override fun onPaymentSuccess(razorpayPaymentId: String?) {
-        SubscriptionManager.onPaymentSuccess(razorpayPaymentId ?: "")
+
+        val paymentId = razorpayPaymentId ?: ""
+
+        Log.d("RAZORPAY", "Payment Success: $paymentId")
+
+        // 🔥 Notify SubscriptionManager
+        SubscriptionManager.onPaymentSuccess(paymentId)
     }
 
-    // ✅ Razorpay calls this on failed/cancelled payment
+    // ❌ PAYMENT FAILED / CANCELLED
     override fun onPaymentError(errorCode: Int, errorDescription: String?) {
-        SubscriptionManager.onPaymentError(errorDescription ?: "Payment failed")
+
+        val errorMsg = errorDescription ?: "Payment failed"
+
+        Log.e("RAZORPAY", "Error [$errorCode]: $errorMsg")
+
+        // 🔥 Notify SubscriptionManager
+        SubscriptionManager.onPaymentError(errorMsg)
     }
 }
