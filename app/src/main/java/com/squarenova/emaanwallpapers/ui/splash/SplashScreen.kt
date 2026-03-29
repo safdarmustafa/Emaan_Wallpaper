@@ -28,8 +28,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 private data class SubscriptionUserRow(
     val phone_number: String? = null,
-    val is_subscribed: Boolean? = false,
-    val subscription_status: String? = null
+    val is_subscribed: Boolean? = false
 )
 
 @Composable
@@ -75,26 +74,18 @@ fun SplashScreen(navController: NavController) {
                     return@LaunchedEffect
                 }
 
-                val localSubscribed = dataStoreManager.isSubscribed.first()
                 val serverSubscribed = try {
-                    val result = SupabaseClient.client
+                    SupabaseClient.client
                         .postgrest["users"]
                         .select { filter { eq("phone_number", phone) } }
                         .decodeList<SubscriptionUserRow>()
                         .firstOrNull()
-
-                    // During trial, `is_subscribed` may stay `false`.
-                    // Treat "not expired" as access granted so the user can use the app during trial.
-                    val status = result?.subscription_status?.lowercase()
-                    val isExpired = status == "expired"
-                    (result?.is_subscribed == true) || (status != null && !isExpired)
+                        ?.is_subscribed == true
                 } catch (e: Exception) {
-                    null
+                    false
                 }
 
-                val isSubscribed = serverSubscribed == true || localSubscribed
-
-                if (isSubscribed) {
+                if (serverSubscribed) {
                     dataStoreManager.setSubscribed()
                     navController.navigate("home") {
                         popUpTo("splash") { inclusive = true }

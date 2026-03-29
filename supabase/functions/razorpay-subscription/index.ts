@@ -14,7 +14,9 @@ serve(async (req: Request) => {
 
     const auth = btoa(`${keyId}:${keySecret}`);
 
-    // 🔥 CREATE SUBSCRIPTION (3 DAYS TRIAL)
+    // First paid renewal (e.g. ₹99) is charged 3 days after signup — align with app trial window.
+    const startAtUnix = Math.floor(Date.now() / 1000) + (3 * 24 * 60 * 60);
+
     const res = await fetch("https://api.razorpay.com/v1/subscriptions", {
       method: "POST",
       headers: {
@@ -25,9 +27,7 @@ serve(async (req: Request) => {
         plan_id: "plan_SUjMMDAgQKiHOy",
         total_count: 12,
         customer_notify: 1,
-
-        // 🔥 TRIAL → 3 DAYS
-        start_at: Math.floor(Date.now() / 1000) + (3 * 24 * 60 * 60)
+        start_at: startAtUnix
       })
     });
 
@@ -45,14 +45,11 @@ serve(async (req: Request) => {
       Deno.env.get("SERVICE_ROLE_KEY")
     );
 
-    // 🔥 IMPORTANT FIX
     await supabase
       .from("users")
       .update({
         razorpay_subscription_id: data.id,
         subscription_status: data.status,
-
-        // ❌ DO NOT ACTIVATE HERE
         is_subscribed: false
       })
       .eq("phone_number", phone);

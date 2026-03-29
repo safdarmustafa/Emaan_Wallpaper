@@ -21,6 +21,30 @@ object SubscriptionApi {
 
     private val client = OkHttpClient()
 
+    /** Supabase Edge Functions return JSON like `{"code":"NOT_FOUND","message":"..."}` or `{ "error": "..." }`. */
+    private fun parseEdgeFunctionError(body: String): String {
+        return try {
+            val o = JSONObject(body)
+            val code = o.optString("code", "")
+            var msg = o.optString("message", "").ifBlank { o.optString("error", "") }
+            val details = o.optJSONObject("details")
+            if (details != null && msg.isNotBlank()) {
+                val inner = details.optJSONObject("error")
+                val razDesc = inner?.optString("description")
+                    ?: details.optString("description", "")
+                if (razDesc.isNotBlank()) msg = "$msg — $razDesc"
+            }
+            when {
+                msg.isNotBlank() && code == "NOT_FOUND" ->
+                    "$msg — deploy the function: supabase functions deploy activate-trial"
+                msg.isNotBlank() -> msg
+                else -> body.ifBlank { "Request failed" }
+            }
+        } catch (_: Exception) {
+            body.ifBlank { "Request failed" }
+        }
+    }
+
     // 🔥 STEP 1 → CREATE ₹5 ORDER
     suspend fun createOrder(): Result<String> = withContext(Dispatchers.IO) {
         try {
@@ -66,6 +90,12 @@ object SubscriptionApi {
                 val response = client.newCall(request).execute()
                 val body = response.body?.string() ?: ""
 
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        Exception(parseEdgeFunctionError(body).ifBlank { "createSubscription failed" })
+                    )
+                }
+
                 val subscriptionId = JSONObject(body).optString("subscription_id")
 
                 if (subscriptionId.isBlank()) {
@@ -74,6 +104,35 @@ object SubscriptionApi {
                     Result.success(subscriptionId)
                 }
 
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    suspend fun activateTrial(phone: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = JSONObject().apply {
+                    put("phone", phone)
+                }
+
+                val request = Request.Builder()
+                    .url(BASE_URL + "activate-trial")
+                    .addHeader("Authorization", "Bearer $ANON_KEY")
+                    .addHeader("Content-Type", "application/json")
+                    .post(json.toString().toRequestBody(JSON))
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        Exception(parseEdgeFunctionError(body).ifBlank { "activateTrial failed" })
+                    )
+                }
+
+                Result.success(Unit)
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -96,10 +155,11 @@ object SubscriptionApi {
                     .build()
 
                 val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(
-                        Exception("Cancel failed")
+                        Exception(parseEdgeFunctionError(body).ifBlank { "Cancel failed" })
                     )
                 }
 

@@ -24,25 +24,21 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
         }
     }
 
-    // ✅ PAYMENT SUCCESS
+    // ✅ PAYMENT SUCCESS (Razorpay may call off main thread; UI + SharedFlow must run on main)
     override fun onPaymentSuccess(razorpayPaymentId: String?) {
-
         val paymentId = razorpayPaymentId ?: ""
-
         Log.d("RAZORPAY", "Payment Success: $paymentId")
-
-        // 🔥 Notify SubscriptionManager
-        SubscriptionManager.onPaymentSuccess(paymentId)
+        runOnUiThread {
+            SubscriptionManager.onPaymentSuccess(paymentId)
+        }
     }
 
     // ❌ PAYMENT FAILED / CANCELLED
     override fun onPaymentError(errorCode: Int, errorDescription: String?) {
-
         val errorMsg = errorDescription ?: "Payment failed"
-
         Log.e("RAZORPAY", "Error [$errorCode]: $errorMsg")
-
-        // 🔥 Notify SubscriptionManager
-        SubscriptionManager.onPaymentError(errorMsg)
+        runOnUiThread {
+            SubscriptionManager.onPaymentError(errorMsg)
+        }
     }
 }

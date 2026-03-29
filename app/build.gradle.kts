@@ -5,6 +5,14 @@ plugins {
     kotlin("plugin.serialization") version "1.9.24" // ✅ Required for Supabase
 }
 
+configurations.configureEach {
+    resolutionStrategy {
+        // checkout POM depends on standard-core "LATEST"; without this Gradle can pick 1.7.x, which pulls
+        // com.razorpay:core and breaks AGP (duplicate namespace com.razorpay).
+        force("com.razorpay:standard-core:1.6.56")
+    }
+}
+
 android {
     namespace = "com.squarenova.emaanwallpapers"
 
@@ -48,8 +56,11 @@ dependencies {
     // ✅ Material Design - Compatible with Razorpay (latest stable)
     implementation("com.google.android.material:material:1.12.0")
 
-    // ✅ Razorpay dependency
-    implementation("com.razorpay:checkout:1.6.33")
+    // ✅ Razorpay — checkout + standard-core new enough for API 33+ registerReceiver flag.
+    // Use standard-core 1.6.x (e.g. 1.6.56): 1.7.x adds com.razorpay:core, and both AARs declare namespace
+    // "com.razorpay", which makes AGP fail manifest processing. 1.6.56 has the 5-arg registerReceiver fix.
+    implementation("com.razorpay:checkout:1.6.41")
+    implementation("com.razorpay:standard-core:1.6.56")
 
     // Coil gif dependency and Mp4 videos
     implementation("androidx.media3:media3-exoplayer:1.3.1")
@@ -95,6 +106,7 @@ dependencies {
     // 🎨 Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

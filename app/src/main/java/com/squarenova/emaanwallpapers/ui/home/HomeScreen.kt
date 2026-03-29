@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
@@ -50,6 +50,16 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.squarenova.emaanwallpapers.theme.AppTextPrimary
+import com.squarenova.emaanwallpapers.theme.AppTextSecondary
+import com.squarenova.emaanwallpapers.theme.BrandGreen
+import com.squarenova.emaanwallpapers.theme.BrandGreenDark
+import com.squarenova.emaanwallpapers.theme.HomeBackground
+import com.squarenova.emaanwallpapers.theme.HomeChipIdle
+import com.squarenova.emaanwallpapers.theme.HomeChipSelected
+import com.squarenova.emaanwallpapers.theme.HomeFilterIconIdle
+import com.squarenova.emaanwallpapers.theme.HomeSurfaceStrip
+import com.squarenova.emaanwallpapers.ui.components.CompactTopBar
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.service.GifWallpaperService
@@ -61,7 +71,6 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import androidx.compose.runtime.produceState
 
 // ─────────────────────────────────────────
 // Models
@@ -85,9 +94,9 @@ data class UserRow(
     val city: String? = null,
     val gender: String? = null,
     val avatar_url: String? = null,
-    val is_subscribed: Boolean? = false
-    ,
-    val subscription_status: String? = null
+    val is_subscribed: Boolean? = false,
+    val subscription_status: String? = null,
+    val trial_end: String? = null
 )
 
 enum class WallpaperFilter(val label: String, val emoji: String, val description: String) {
@@ -140,14 +149,6 @@ fun HomeScreen(navController: NavController) {
 
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
-    // Avoid "initial false" race; only redirect once we actually read the datastore value.
-    val localSubscribedState = produceState<Boolean?>(initialValue = null) {
-        // Observe changes so if payment completes just before/after navigation,
-        // we won't incorrectly redirect to subscription.
-        dataStoreManager.isSubscribed.collect { subscribed ->
-            value = subscribed
-        }
-    }
     val configuration = LocalConfiguration.current
     val scope = rememberCoroutineScope()
 
@@ -180,42 +181,55 @@ fun HomeScreen(navController: NavController) {
 
     var redirectedToSubscription by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isLoading, user?.is_subscribed, user?.subscription_status, localSubscribedState.value) {
-        val localSubscribed = localSubscribedState.value
-        val hasPremiumAccess =
-            user?.is_subscribed == true ||
-                (user?.subscription_status?.lowercase() != null &&
-                    user?.subscription_status?.lowercase() != "expired") ||
-                localSubscribed == true
+    LaunchedEffect(isLoading, user?.is_subscribed, user?.phone_number) {
+        if (isLoading || redirectedToSubscription) return@LaunchedEffect
 
-        // Only redirect once we have enough info to decide.
-        // If payment just succeeded, local datastore might not have propagated yet.
-        val hasLoadedAccessSignals =
-            user?.subscription_status != null || localSubscribedState.value != null
+        if (user?.is_subscribed == true) {
+            dataStoreManager.setSubscribed()
+            return@LaunchedEffect
+        }
 
-        if (!isLoading && !redirectedToSubscription && hasLoadedAccessSignals && !hasPremiumAccess) {
+        delay(300)
+        if (redirectedToSubscription) return@LaunchedEffect
+
+        val phone = dataStoreManager.phoneNumber.firstOrNull()
+        if (!phone.isNullOrEmpty()) {
+            try {
+                val refreshed = SupabaseClient.client
+                    .postgrest["users"]
+                    .select(
+                        columns = Columns.list(
+                            "phone_number",
+                            "first_name",
+                            "last_name",
+                            "avatar_url",
+                            "is_subscribed",
+                            "subscription_status",
+                            "trial_end"
+                        )
+                    ) { filter { eq("phone_number", phone) } }
+                    .decodeSingle<UserRow>()
+                user = refreshed
+                avatarUrl = refreshed.avatar_url
+                cachedFirstName = refreshed.first_name
+                if (refreshed.is_subscribed == true) {
+                    dataStoreManager.setSubscribed()
+                    return@LaunchedEffect
+                }
+            } catch (e: Exception) {
+                Log.e("HOME_ACCESS_REFRESH", e.message ?: "Unknown")
+            }
+        }
+
+        if (!redirectedToSubscription && user?.is_subscribed != true) {
             Log.d(
                 "HOME_ACCESS_GUARD",
-                "Redirecting soon: hasPremiumAccess=$hasPremiumAccess localSubscribed=${localSubscribedState.value} userStatus=${user?.subscription_status} userSubscribed=${user?.is_subscribed}"
+                "Redirecting: userSubscribed=${user?.is_subscribed}"
             )
-            delay(300)
-            // Re-check after grace delay (state may have updated).
-            val localSubscribedNow = localSubscribedState.value == true
-            val statusNow = user?.subscription_status?.lowercase()
-            val hasPremiumAccessNow =
-                user?.is_subscribed == true ||
-                    (statusNow != null && statusNow != "expired") ||
-                    localSubscribedNow
-
-            if (!redirectedToSubscription && !hasPremiumAccessNow) {
-                Log.d(
-                    "HOME_ACCESS_GUARD",
-                    "Redirecting: hasPremiumAccessNow=$hasPremiumAccessNow localSubscribedNow=$localSubscribedNow statusNow=$statusNow"
-                )
-                redirectedToSubscription = true
-                navController.navigate("subscription") {
-                    popUpTo("home") { inclusive = true }
-                }
+            redirectedToSubscription = true
+            dataStoreManager.setUnsubscribed()
+            navController.navigate("subscription") {
+                popUpTo("home") { inclusive = true }
             }
         }
     }
@@ -245,7 +259,8 @@ fun HomeScreen(navController: NavController) {
                             "last_name",
                             "avatar_url",
                             "is_subscribed",
-                            "subscription_status"
+                            "subscription_status",
+                            "trial_end"
                         )
                     ) { filter { eq("phone_number", phone) } }
                     .decodeSingle<UserRow>()
@@ -277,7 +292,8 @@ fun HomeScreen(navController: NavController) {
                                         "last_name",
                                         "avatar_url",
                                         "is_subscribed",
-                                        "subscription_status"
+                                        "subscription_status",
+                                        "trial_end"
                                     )
                                 ) { filter { eq("phone_number", phone) } }
                                 .decodeSingle<UserRow>()
@@ -319,15 +335,22 @@ fun HomeScreen(navController: NavController) {
         } finally { isLiveLoading = false }
     }
 
-    val gradient = Brush.verticalGradient(colors = listOf(Color(0xFF064E3B), Color(0xFF0F766E)))
-    val darkGreen = Color(0xFF064E3B)
-    val goldColor = Color(0xFFD4AF37)
+    val homeBg = HomeBackground
+    val homeStripBg = HomeSurfaceStrip
+    val chipIdleBg = HomeChipIdle
+    val filterIconIdleBg = HomeFilterIconIdle
+
+    val avatarInitial = remember(user?.first_name, cachedFirstName) {
+        user?.first_name?.firstOrNull()?.uppercaseChar()?.toString()
+            ?: cachedFirstName?.firstOrNull()?.uppercaseChar()?.toString()
+            ?: "?"
+    }
 
     // ── Filter Bottom Sheet ──────────────────
     if (showFilterSheet) {
         ModalBottomSheet(
             onDismissRequest = { showFilterSheet = false },
-            containerColor = Color(0xFF1A4A38),
+            containerColor = Color.White,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             Column(
@@ -338,14 +361,14 @@ fun HomeScreen(navController: NavController) {
             ) {
                 Text(
                     "Filter Wallpapers",
-                    color = Color.White,
+                    color = AppTextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "Choose what to display",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = AppTextSecondary,
                     fontSize = 13.sp
                 )
                 Spacer(modifier = Modifier.height(20.dp))
@@ -357,8 +380,8 @@ fun HomeScreen(navController: NavController) {
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
                             .background(
-                                if (isSelected) darkGreen.copy(alpha = 0.6f)
-                                else Color.White.copy(alpha = 0.05f)
+                                if (isSelected) BrandGreen.copy(alpha = 0.18f)
+                                else Color(0xFFF0F0F0)
                             )
                             .clickable {
                                 activeFilter = filter
@@ -374,13 +397,13 @@ fun HomeScreen(navController: NavController) {
                             Column {
                                 Text(
                                     filter.label,
-                                    color = Color.White,
+                                    color = AppTextPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     filter.description,
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = AppTextSecondary,
                                     fontSize = 12.sp
                                 )
                             }
@@ -389,7 +412,7 @@ fun HomeScreen(navController: NavController) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
-                                tint = goldColor,
+                                tint = BrandGreenDark,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -402,83 +425,24 @@ fun HomeScreen(navController: NavController) {
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
+        Column(modifier = Modifier.fillMaxSize().background(homeBg)) {
 
-            // ── Header ───────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
-                    .background(brush = gradient)
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 14.dp)
-            ) {
-                Column(modifier = Modifier.align(Alignment.CenterStart)) {
-                    Text(
-                        "Assalamu Alaikum 🌙",
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 12.sp
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (!isLoading) (user?.first_name ?: cachedFirstName) ?: "Guest" else "",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                IconButton(
-                    onClick = { navController.navigate("profile") },
-                    modifier = Modifier.size(46.dp).align(Alignment.CenterEnd)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            // Always show a visible circle even if image fails
-                            .background(goldColor),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val initial = user?.first_name
-                            ?.firstOrNull()
-                            ?.uppercaseChar()
-                            ?.toString()
-                            ?: cachedFirstName
-                                ?.firstOrNull()
-                                ?.uppercaseChar()
-                                ?.toString()
-                            ?: "?"
-
-                        if (!avatarUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(avatarUrl)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = "Profile",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(46.dp)
-                                    .clip(CircleShape)
-                            )
-                        }
-
-                        // Draw initials last so they remain visible even if the image can't load.
-                        Text(
-                            text = initial,
-                            color = Color.Black,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
+            CompactTopBar(
+                greeting = "Assalamu Alaikum 🌙",
+                title = if (!isLoading) (user?.first_name ?: cachedFirstName) ?: "Guest" else "",
+                isLoadingTitle = isLoading,
+                avatarUrl = avatarUrl,
+                avatarInitial = avatarInitial,
+                isSubscribed = user?.is_subscribed == true,
+                subscriptionStatus = user?.subscription_status,
+                onProfileClick = { navController.navigate("profile") }
+            )
 
             // ── Category row with filter icon ────
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.White)
+                    .background(homeStripBg)
                     .padding(vertical = 8.dp),
                 contentPadding = PaddingValues(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -491,8 +455,8 @@ fun HomeScreen(navController: NavController) {
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(
-                                if (activeFilter != WallpaperFilter.ALL) darkGreen
-                                else Color(0xFFF0F0F0)
+                                if (activeFilter != WallpaperFilter.ALL) HomeChipSelected
+                                else filterIconIdleBg
                             )
                             .clickable { showFilterSheet = true },
                         contentAlignment = Alignment.Center
@@ -500,8 +464,7 @@ fun HomeScreen(navController: NavController) {
                         Text(
                             text = "⚙",
                             fontSize = 17.sp,
-                            color = if (activeFilter != WallpaperFilter.ALL) Color.White
-                            else Color(0xFF444444)
+                            color = if (activeFilter != WallpaperFilter.ALL) Color.White else AppTextPrimary
                         )
                     }
                 }
@@ -518,15 +481,16 @@ fun HomeScreen(navController: NavController) {
                             label = {
                                 Text(
                                     category.replaceFirstChar { it.uppercase() },
-                                    fontSize = 12.sp
+                                    fontSize = 12.sp,
+                                    color = if (selectedCategory == category) Color.White else AppTextPrimary
                                 )
                             },
                             modifier = Modifier.padding(horizontal = 4.dp),
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = darkGreen,
+                                selectedContainerColor = HomeChipSelected,
                                 selectedLabelColor = Color.White,
-                                containerColor = Color(0xFFF0F0F0),
-                                labelColor = Color.Black
+                                containerColor = chipIdleBg,
+                                labelColor = AppTextPrimary
                             )
                         )
                     }
@@ -536,7 +500,7 @@ fun HomeScreen(navController: NavController) {
                             modifier = Modifier
                                 .padding(horizontal = 4.dp)
                                 .clip(RoundedCornerShape(50.dp))
-                                .background(darkGreen)
+                                .background(HomeChipSelected)
                                 .padding(horizontal = 14.dp, vertical = 6.dp)
                         ) {
                             Text(
@@ -590,10 +554,10 @@ fun HomeScreen(navController: NavController) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text("🕌", fontSize = 48.sp)
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Text("No wallpapers yet", color = Color.Gray, fontSize = 16.sp)
+                                    Text("No wallpapers yet", color = AppTextPrimary, fontSize = 16.sp)
                                     Text(
                                         "Coming soon insha'Allah",
-                                        color = Color.Gray.copy(alpha = 0.6f),
+                                        color = AppTextSecondary,
                                         fontSize = 13.sp
                                     )
                                 }
@@ -633,7 +597,7 @@ fun HomeScreen(navController: NavController) {
         ) {
             Snackbar(
                 modifier = Modifier.padding(16.dp),
-                containerColor = if (snackbarIsSuccess) Color(0xFF064E3B) else Color(0xFFB00020),
+                containerColor = if (snackbarIsSuccess) BrandGreenDark else Color(0xFFB00020),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Text(
@@ -665,7 +629,7 @@ fun ShimmerCard(cardHeight: Dp) {
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(
-                color = Color(0xFF064E3B),
+                color = BrandGreen,
                 strokeWidth = 3.dp,
                 modifier = Modifier.size(36.dp)
             )
@@ -708,7 +672,7 @@ fun LiveWallpaperCard(
     ) {
         Box(modifier = Modifier.fillMaxWidth().height(cardHeight)) {
 
-            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0D3B2E)))
+            Box(modifier = Modifier.fillMaxSize().background(Color(0xFFE8EDE9)))
 
             AndroidView(
                 factory = { ctx ->
@@ -744,14 +708,14 @@ fun LiveWallpaperCard(
                     .padding(12.dp)
                     .align(Alignment.TopStart)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFD4AF37))
+                    .background(BrandGreen)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
                     "● LIVE",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black
+                    color = Color.White
                 )
             }
 
@@ -774,14 +738,14 @@ fun LiveWallpaperCard(
                 Button(
                     onClick = onSetLiveWallpaper,
                     shape = RoundedCornerShape(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD4AF37)),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreen),
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                     modifier = Modifier.height(42.dp)
                 ) {
                     Text(
-                        "🌀  Set Live Wallpaper",
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold,
+                        "Set live wallpaper",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )
                 }
@@ -844,28 +808,28 @@ fun WallpaperCard(
                     .height(42.dp),
                 shape = RoundedCornerShape(50.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD4AF37),
-                    disabledContainerColor = Color(0xFFD4AF37).copy(alpha = 0.7f)
+                    containerColor = BrandGreen,
+                    disabledContainerColor = BrandGreen.copy(alpha = 0.65f)
                 ),
                 contentPadding = PaddingValues(horizontal = 24.dp)
             ) {
                 if (isSettingWallpaper) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
-                        color = Color.Black,
+                        color = Color.White,
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         "Setting...",
-                        color = Color.Black,
+                        color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )
                 } else {
                     Text(
-                        "🖼️  Set Wallpaper",
-                        color = Color.Black,
+                        "Set wallpaper",
+                        color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )

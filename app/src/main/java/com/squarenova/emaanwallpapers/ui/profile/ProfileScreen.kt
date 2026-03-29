@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +39,16 @@ import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
+import com.squarenova.emaanwallpapers.theme.AppBackground
+import com.squarenova.emaanwallpapers.theme.AppDivider
+import com.squarenova.emaanwallpapers.theme.AppSurface
+import com.squarenova.emaanwallpapers.theme.AppTextPrimary
+import com.squarenova.emaanwallpapers.theme.AppTextSecondary
+import com.squarenova.emaanwallpapers.theme.AppTextTertiary
+import com.squarenova.emaanwallpapers.theme.BrandGreen
+import com.squarenova.emaanwallpapers.theme.BrandGreenDark
+import com.squarenova.emaanwallpapers.ui.subscription.PremiumBadge
+import com.squarenova.emaanwallpapers.ui.subscription.TrialCountdown
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.delay
@@ -57,7 +66,8 @@ data class UserRow(
     val avatar_url: String? = null,
     val is_subscribed: Boolean? = null,
     val razorpay_subscription_id: String? = null,
-    val subscription_status: String? = null
+    val subscription_status: String? = null,
+    val trial_end: String? = null
 )
 
 @Serializable
@@ -65,6 +75,11 @@ data class UserUpdateRow(
     val first_name: String? = null,
     val last_name: String? = null,
     val avatar_url: String? = null  // ✅ persisted avatar
+)
+
+@Serializable
+data class SubscriptionStatusPatch(
+    val subscription_status: String
 )
 
 @Composable
@@ -84,6 +99,7 @@ fun ProfileScreen(navController: NavController) {
     var isSubscribed by remember { mutableStateOf(false) }
     var razorpaySubscriptionId by remember { mutableStateOf<String?>(null) }
     var subscriptionStatus by remember { mutableStateOf<String?>(null) }
+    var trialEnd by remember { mutableStateOf<String?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
 
@@ -102,6 +118,7 @@ fun ProfileScreen(navController: NavController) {
             isSubscribed = result.is_subscribed == true
             razorpaySubscriptionId = result.razorpay_subscription_id
             subscriptionStatus = result.subscription_status
+            trialEnd = result.trial_end
         } catch (e: Exception) {
             Log.e("PROFILE_SUBSCRIPTION_REFRESH", e.message ?: "Unknown")
         }
@@ -192,6 +209,7 @@ fun ProfileScreen(navController: NavController) {
                 isSubscribed = result.is_subscribed == true
                 razorpaySubscriptionId = result.razorpay_subscription_id
                 subscriptionStatus = result.subscription_status
+                trialEnd = result.trial_end
             }
         } catch (e: Exception) {
             Log.e("PROFILE_ERROR", e.message ?: "Unknown error")
@@ -253,29 +271,68 @@ fun ProfileScreen(navController: NavController) {
     if (showCancelDialog) {
         CancelSubscriptionDialog(
             isCancelling = isCancelling,
+            isTrial = subscriptionStatus?.equals("trial", ignoreCase = true) == true,
             onDismiss = { showCancelDialog = false },
             onConfirm = {
                 scope.launch {
                     isCancelling = true
                     try {
-                        val subId = razorpaySubscriptionId
+                        val phone = dataStoreManager.phoneNumber.firstOrNull()
+                        if (phone.isNullOrBlank()) {
+                            saveMessage = "Cancel failed ❌"
+                            return@launch
+                        }
+                        val row = try {
+                            SupabaseClient.client
+                                .postgrest["users"]
+                                .select { filter { eq("phone_number", phone) } }
+                                .decodeSingle<UserRow>()
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (row == null) {
+                            saveMessage = "Cancel failed ❌"
+                            return@launch
+                        }
+
+                        if (row.subscription_status?.equals("cancel_requested", ignoreCase = true) == true) {
+                            saveMessage = "Already cancelled. No further charges will be made ✅"
+                            showCancelDialog = false
+                            return@launch
+                        }
+
+                        if (row.subscription_status?.equals("trial", ignoreCase = true) == true) {
+                            SupabaseClient.client
+                                .postgrest["users"]
+                                .update(SubscriptionStatusPatch(subscription_status = "cancel_requested")) {
+                                    filter { eq("phone_number", phone) }
+                                }
+                            saveMessage = "Trial cancelled. You will not be charged ₹99"
+                            showCancelDialog = false
+                            refreshSubscriptionState()
+                            return@launch
+                        }
+
+                        val subId = row.razorpay_subscription_id
                         if (subId.isNullOrBlank()) {
-                            saveMessage = "Subscription not found ❌"
+                            saveMessage = "Cancel failed: no subscription on file ❌"
+                            Log.e("PROFILE_CANCEL", "razorpay_subscription_id missing for phone=$phone")
                             return@launch
                         }
 
                         val result = SubscriptionApi.cancelSubscription(subId)
                         if (result.isSuccess) {
-                            saveMessage = "Cancellation requested ✅"
-                            // Keep premium access active until the expiry webhook updates Supabase.
+                            saveMessage = "Cancellation requested"
                             showCancelDialog = false
                             refreshSubscriptionState()
                         } else {
-                            val e = result.exceptionOrNull()
-                            saveMessage = e?.message ?: "Failed to cancel subscription ❌"
+                            val reason = result.exceptionOrNull()?.message?.take(180) ?: "unknown"
+                            Log.e("PROFILE_CANCEL", "API error: $reason")
+                            saveMessage = "Cancel failed: $reason ❌"
                         }
                     } catch (e: Exception) {
-                        saveMessage = e.message ?: "Failed to cancel subscription ❌"
+                        Log.e("PROFILE_CANCEL", e.message ?: "cancel", e)
+                        saveMessage = "Cancel failed: ${e.message?.take(120) ?: "unknown"} ❌"
                     } finally {
                         isCancelling = false
                     }
@@ -284,14 +341,12 @@ fun ProfileScreen(navController: NavController) {
         )
     }
 
-    // Core app theme colors
-    val darkGreen = Color(0xFF064E3B)
-    val lightGreen = Color(0xFFE0F2F1)
-    val goldColor = Color(0xFFD4AF37)
-    val surface = Color(0xFFFFFFFF)
-    val background = lightGreen
-
-    val headerGradient = Brush.verticalGradient(listOf(background, background))
+    val appBg = AppBackground
+    val surface = AppSurface
+    val primary = AppTextPrimary
+    val secondary = AppTextSecondary
+    val divider = AppDivider
+    val brand = BrandGreen
 
     val avatarInitial = user?.first_name
         ?.firstOrNull()
@@ -302,7 +357,7 @@ fun ProfileScreen(navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(background)
+            .background(appBg)
     ) {
         Column(
             modifier = Modifier
@@ -310,187 +365,223 @@ fun ProfileScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
         ) {
 
-            // Header
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(260.dp)
-                    .background(brush = headerGradient)
-                    .statusBarsPadding()
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                color = surface,
+                tonalElevation = 0.dp,
+                shadowElevation = 3.dp
             ) {
-                Box(
-                    modifier = Modifier
-                        .smoothClickable {
-                            AnalyticsManager.trackEvent("Profile - Back Tapped")
-                            navController.popBackStack()
-                        }
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Color.White
-                        )
-                        .border(1.dp, darkGreen.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = darkGreen,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Text(
-                    text = "My Profile",
-                        color = darkGreen,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 16.dp)
-                )
-
                 Column(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .offset(y = 70.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(bottom = 20.dp)
                 ) {
-                    Box(modifier = Modifier.size(124.dp), contentAlignment = Alignment.Center) {
-
-                        // Glow ring
+                    Box(Modifier.fillMaxWidth()) {
                         Box(
                             modifier = Modifier
-                                .size(124.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.radialGradient(
-                                        listOf(goldColor.copy(alpha = 0.4f), Color.Transparent)
-                                    )
-                                )
-                        )
-
-                        // Avatar circle
-                        Box(
-                            modifier = Modifier
-                                .size(114.dp)
-                                .clip(CircleShape)
-                                .border(3.dp, goldColor, CircleShape)
                                 .smoothClickable {
-                                    AnalyticsManager.trackEvent("Profile - Avatar Tapped")
-                                    galleryLauncher.launch("image/*")
+                                    AnalyticsManager.trackEvent("Profile - Back Tapped")
+                                    navController.popBackStack()
                                 }
+                                .align(Alignment.TopStart)
+                                .padding(12.dp)
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(surface)
+                                .border(1.dp, divider, CircleShape),
+                            contentAlignment = Alignment.Center
                         ) {
-                            when {
-                                // ✅ Show upload spinner
-                                isUploadingAvatar -> {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = goldColor.copy(alpha = 0.3f),
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            CircularProgressIndicator(
-                                                color = goldColor,
-                                                modifier = Modifier.size(32.dp),
-                                                strokeWidth = 3.dp
-                                            )
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = BrandGreenDark,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Text(
+                            text = "My Profile",
+                            color = primary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 16.dp)
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(modifier = Modifier.size(112.dp), contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .size(112.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, brand, CircleShape)
+                                    .smoothClickable {
+                                        AnalyticsManager.trackEvent("Profile - Avatar Tapped")
+                                        galleryLauncher.launch("image/*")
+                                    }
+                            ) {
+                                when {
+                                    isUploadingAvatar -> {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = brand.copy(alpha = 0.12f),
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                CircularProgressIndicator(
+                                                    color = brand,
+                                                    modifier = Modifier.size(32.dp),
+                                                    strokeWidth = 3.dp
+                                                )
+                                            }
                                         }
                                     }
-                                }
-                                else -> {
-                                    // Always show a gold circle + initials.
-                                    // If the image fails to load, initials will still be visible.
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape)
-                                            .background(goldColor),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (!avatarUrl.isNullOrBlank()) {
-                                            AsyncImage(
-                                                model = avatarUrl,
-                                                contentDescription = "Profile Picture",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .clip(CircleShape)
-                                            )
-                                        }
-
-                                        if (isLoading) {
-                                            CircularProgressIndicator(
-                                                color = Color.Black,
-                                                modifier = Modifier.size(28.dp),
-                                                strokeWidth = 2.dp
-                                            )
-                                        } else {
-                                            Text(
-                                                text = avatarInitial,
-                                                fontSize = 42.sp,
-                                                color = Color.Black,
-                                                fontWeight = FontWeight.Bold
-                                            )
+                                    else -> {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFF0F4F2)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (!avatarUrl.isNullOrBlank()) {
+                                                AsyncImage(
+                                                    model = avatarUrl,
+                                                    contentDescription = "Profile Picture",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .clip(CircleShape)
+                                                )
+                                            } else if (isLoading) {
+                                                CircularProgressIndicator(
+                                                    color = brand,
+                                                    modifier = Modifier.size(28.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = avatarInitial,
+                                                    fontSize = 40.sp,
+                                                    color = primary,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .align(Alignment.BottomEnd)
+                                    .shadow(3.dp, CircleShape)
+                                    .clip(CircleShape)
+                                    .background(brand)
+                                    .border(2.dp, surface, CircleShape)
+                                    .smoothClickable {
+                                        AnalyticsManager.trackEvent("Profile - Camera Badge Tapped")
+                                        galleryLauncher.launch("image/*")
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("📷", fontSize = 12.sp, color = Color.White)
+                            }
                         }
 
-                        // Camera badge
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .align(Alignment.BottomEnd)
-                                .shadow(4.dp, CircleShape)
-                                .clip(CircleShape)
-                                .background(Color(0xFF064E3B))
-                                .border(2.dp, Color.White, CircleShape)
-                                .smoothClickable {
-                                    AnalyticsManager.trackEvent("Profile - Camera Badge Tapped")
-                                    galleryLauncher.launch("image/*")
-                                },
-                            contentAlignment = Alignment.Center
-                        ) { Text("📷", fontSize = 13.sp) }
-                    }
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Text(
-                        text = if (isLoading) "Loading..."
-                        else "${user?.first_name ?: ""} ${user?.last_name ?: ""}".trim()
-                            .ifEmpty { "No Name" },
-                        color = darkGreen,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color.White)
-                            .padding(horizontal = 14.dp, vertical = 4.dp)
-                    ) {
                         Text(
-                            text = user?.phone_number?.ifEmpty { "Member of Emaan Wallpapers" } ?: "Member of Emaan Wallpapers",
-                            color = darkGreen.copy(alpha = 0.8f),
-                            fontSize = 13.sp
+                            text = if (isLoading) "Loading..."
+                            else "${user?.first_name ?: ""} ${user?.last_name ?: ""}".trim()
+                                .ifEmpty { "No Name" },
+                            color = primary,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
                         )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val sub = subscriptionStatus?.lowercase()
+                        val showSubscriptionCard = when {
+                            sub == "cancelled" -> false
+                            isSubscribed -> true
+                            sub == "trial" || sub == "cancel_requested" -> true
+                            else -> false
+                        }
+                        if (showSubscriptionCard) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                color = surface,
+                                border = BorderStroke(1.dp, brand.copy(alpha = 0.22f)),
+                                shadowElevation = 2.dp
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "MEMBERSHIP",
+                                        color = secondary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.8.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    PremiumBadge(
+                                        isSubscribed = isSubscribed,
+                                        subscriptionStatus = subscriptionStatus,
+                                        compact = true
+                                    )
+                                    if (subscriptionStatus?.equals("trial", ignoreCase = true) == true) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        TrialCountdown(trialEndIso = trialEnd, compact = true)
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        } else {
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = appBg,
+                            border = BorderStroke(1.dp, divider.copy(alpha = 0.7f))
+                        ) {
+                            Text(
+                                text = user?.phone_number?.ifEmpty { "Member of Emaan Wallpapers" }
+                                    ?: "Member of Emaan Wallpapers",
+                                color = secondary,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(72.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             Text(
                 text = "Account",
-                color = darkGreen.copy(alpha = 0.8f),
+                color = secondary,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.5.sp,
@@ -507,8 +598,8 @@ fun ProfileScreen(navController: NavController) {
                     icon = "✏️",
                     title = "Edit Profile",
                     subtitle = "Update your name details",
-                    containerColor = Color(0xFFE8F5E9),
-                    titleColor = darkGreen
+                    containerColor = surface,
+                    titleColor = primary
                 ) {
                     AnalyticsManager.trackEvent("Profile - Edit Profile Tapped")
                     showEditDialog = true
@@ -517,15 +608,17 @@ fun ProfileScreen(navController: NavController) {
                     icon = "👑",
                     title = if (isSubscribed) "Cancel Subscription" else "Upgrade to Premium",
                     subtitle = if (isSubscribed)
-                        if (subscriptionStatus == "cancelled") {
-                            "Your plan will end after current billing period"
-                        } else {
-                            "Stop future premium payments"
+                        when (subscriptionStatus?.lowercase()) {
+                            "cancel_requested" -> "Your subscription will end after current period"
+                            "cancelled" -> "Your plan will end after current billing period"
+                            "trial" -> "Your subscription will not be renewed after trial"
+                            else -> "Stop future premium payments"
                         }
                     else
                         "Unlock exclusive wallpapers",
-                    containerColor = Color(0xFFF1F8E9),
-                    titleColor = darkGreen
+                    containerColor = surface,
+                    titleColor = primary,
+                    enabled = !isSubscribed || subscriptionStatus?.equals("cancel_requested", ignoreCase = true) != true
                 ) {
                     AnalyticsManager.trackEvent(
                         if (isSubscribed) "Profile - Cancel Subscription Tapped"
@@ -539,8 +632,8 @@ fun ProfileScreen(navController: NavController) {
                     icon = "📤",
                     title = "Share App",
                     subtitle = "Invite friends to Emaan Wallpapers",
-                    containerColor = Color(0xFFE8F5E9),
-                    titleColor = darkGreen
+                    containerColor = surface,
+                    titleColor = primary
                 ) {
                     AnalyticsManager.trackEvent("Profile - Share App Tapped")
                 }
@@ -549,8 +642,10 @@ fun ProfileScreen(navController: NavController) {
 
                 Text(
                     text = "Danger Zone",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp,
+                    color = secondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.5.sp,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
 
@@ -573,7 +668,7 @@ fun ProfileScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(48.dp))
             Text(
                 text = "Emaan Wallpapers v1.0",
-                color = Color.White.copy(alpha = 0.25f),
+                color = AppTextTertiary.copy(alpha = 0.65f),
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
@@ -587,7 +682,7 @@ fun ProfileScreen(navController: NavController) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(16.dp),
-                containerColor = if (msg.contains("✅")) Color(0xFF064E3B) else Color(0xFFB00020),
+                containerColor = if (msg.contains("✅")) BrandGreenDark else Color(0xFFB00020),
                 shape = RoundedCornerShape(14.dp)
             ) { Text(msg, color = Color.White, fontWeight = FontWeight.Medium) }
         }
@@ -604,7 +699,7 @@ fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onS
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A4A38)),
+            colors = CardDefaults.cardColors(containerColor = AppSurface),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(4.dp)
@@ -617,18 +712,18 @@ fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onS
             ) {
                 Text(
                     "Edit Profile",
-                    color = Color.White,
+                    color = AppTextPrimary,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
-                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                HorizontalDivider(color = AppDivider)
                 EditField("First Name *", firstName) { firstName = it }
                 EditField("Last Name *", lastName) { lastName = it }
 
                 error?.let { msg ->
                     Text(
                         text = msg,
-                        color = Color(0xFFFFB4AB),
+                        color = Color(0xFFB3261E),
                         fontSize = 12.sp
                     )
                 }
@@ -645,8 +740,8 @@ fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onS
                             onDismiss()
                         },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTextPrimary),
+                        border = BorderStroke(1.dp, AppDivider)
                     ) { Text("Cancel") }
 
                     Button(
@@ -670,12 +765,16 @@ fun EditProfileDialog(user: User?, isSaving: Boolean, onDismiss: () -> Unit, onS
                         },
                         modifier = Modifier.weight(1f),
                         enabled = !isSaving,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD4AF37))
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGreen)
                     ) {
                         if (isSaving) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.Black, strokeWidth = 2.dp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
                         } else {
-                            Text("Save", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -689,15 +788,15 @@ fun EditField(label: String, value: String, isNumber: Boolean = false, onValueCh
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, color = Color.White.copy(alpha = 0.65f)) },
+        label = { Text(label, color = AppTextSecondary) },
         singleLine = true,
         keyboardOptions = if (isNumber) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            focusedBorderColor = Color(0xFFD4AF37),
-            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-            cursorColor = Color(0xFFD4AF37)
+            focusedTextColor = AppTextPrimary,
+            unfocusedTextColor = AppTextPrimary,
+            focusedBorderColor = BrandGreen,
+            unfocusedBorderColor = AppDivider,
+            cursorColor = BrandGreen
         ),
         modifier = Modifier.fillMaxWidth()
     )
@@ -708,17 +807,19 @@ fun ProfileItem(
     icon: String,
     title: String,
     subtitle: String = "",
-    containerColor: Color = Color.White,
-    titleColor: Color = Color(0xFF064E3B),
+    containerColor: Color = AppSurface,
+    titleColor: Color = AppTextPrimary,
+    enabled: Boolean = true,
     onClick: (() -> Unit)? = null
 ) {
     Card(
         onClick = { onClick?.invoke() },
+        enabled = enabled,
         modifier = Modifier
             .fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
@@ -748,7 +849,7 @@ fun ProfileItem(
                     if (subtitle.isNotEmpty()) {
                         Text(
                             subtitle,
-                            color = Color(0xFF64748B),
+                            color = AppTextSecondary,
                             fontSize = 12.sp
                         )
                     }
@@ -756,7 +857,7 @@ fun ProfileItem(
             }
             Text(
                 "›",
-                color = Color(0xFF94A3B8),
+                color = AppTextTertiary,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Light
             )
@@ -767,13 +868,14 @@ fun ProfileItem(
 @Composable
 fun CancelSubscriptionDialog(
     isCancelling: Boolean,
+    isTrial: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A4A38)),
+            colors = CardDefaults.cardColors(containerColor = AppSurface),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(4.dp)
@@ -786,14 +888,18 @@ fun CancelSubscriptionDialog(
             ) {
                 Text(
                     "Cancel Premium Subscription",
-                    color = Color.White,
+                    color = AppTextPrimary,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
-                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                HorizontalDivider(color = AppDivider)
                 Text(
-                    "We will cancel your premium at the end of the current billing cycle.",
-                    color = Color.White.copy(alpha = 0.8f),
+                    if (isTrial) {
+                        "Your subscription will not be renewed after trial."
+                    } else {
+                        "We will cancel your premium at the end of the current billing cycle."
+                    },
+                    color = AppTextSecondary,
                     fontSize = 13.sp
                 )
 
@@ -804,8 +910,8 @@ fun CancelSubscriptionDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTextPrimary),
+                        border = BorderStroke(1.dp, AppDivider)
                     ) { Text("No") }
 
                     Button(

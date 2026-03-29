@@ -1,18 +1,12 @@
 package com.squarenova.emaanwallpapers.navigation
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -28,9 +22,13 @@ import com.squarenova.emaanwallpapers.ui.profile.ProfileScreen
 import com.squarenova.emaanwallpapers.ui.reels.ReelsScreen
 import com.squarenova.emaanwallpapers.ui.splash.SplashScreen
 
+import com.squarenova.emaanwallpapers.ui.components.FloatingBottomBar
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionScreen
 
 private val bottomNavScreens = listOf("home", "reels")
+
+// Matches floating bar: nav inset + bottom padding + bar row + gap above bar
+private val bottomBarInsetDp = 90.dp
 
 @Composable
 fun AppNavGraph() {
@@ -47,7 +45,7 @@ fun AppNavGraph() {
             // ✅ Add bottom padding so content isn't hidden behind nav bar
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = if (showBottomBar) 56.dp else 0.dp)
+                .padding(bottom = if (showBottomBar) bottomBarInsetDp else 0.dp)
         ) {
             composable("splash") { SplashScreen(navController) }
             composable("login") { LoginScreen(navController) }
@@ -73,79 +71,11 @@ fun AppNavGraph() {
 
         // ✅ Bottom nav bar pinned to bottom
         if (showBottomBar) {
-            BottomNavBar(
+            FloatingBottomBar(
                 currentRoute = currentRoute,
                 navController = navController,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
-        }
-    }
-}
-
-data class BottomNavItem(val route: String, val emoji: String, val label: String)
-
-@Composable
-fun BottomNavBar(
-    currentRoute: String?,
-    navController: NavController,
-    modifier: Modifier = Modifier
-) {
-    val items = listOf(
-        BottomNavItem("home", "🕌", "Wallpapers"),
-        BottomNavItem("reels", "🎬", "Reels")
-    )
-    val goldColor = Color(0xFFD4AF37)
-
-    // ✅ Fixed compact height — 56dp only, no extra padding
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color(0xFF0A3528))
-            .navigationBarsPadding()
-            .height(56.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        items.forEach { item ->
-            val isSelected = currentRoute == item.route
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable {
-                        if (currentRoute != item.route) {
-                            navController.navigate(item.route) {
-                                popUpTo("home") { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    }
-            ) {
-                Text(
-                    text = item.emoji,
-                    fontSize = if (isSelected) 22.sp else 20.sp
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = item.label,
-                    color = if (isSelected) goldColor else Color.White.copy(alpha = 0.5f),
-                    fontSize = 10.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                )
-                if (isSelected) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Box(
-                        modifier = Modifier
-                            .width(16.dp)
-                            .height(2.dp)
-                            .clip(RoundedCornerShape(50.dp))
-                            .background(goldColor)
-                    )
-                }
-            }
         }
     }
 }

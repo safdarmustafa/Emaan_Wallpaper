@@ -36,11 +36,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Razorpay CheckoutActivity - must use Theme.AppCompat to prevent WebView crash -->
+        <!-- Razorpay: standard-core AAR already declares CheckoutActivity (exported=false). Only override theme. -->
         <activity
             android:name="com.razorpay.CheckoutActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
-            android:exported="true"
             android:theme="@style/Theme.RazorpayCheckout"
             tools:replace="android:theme" />
 

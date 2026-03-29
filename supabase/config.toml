@@ -416,6 +416,12 @@ entrypoint = "./functions/create-order/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/create-order/*.html" ]
 
+[functions.activate-trial]
+enabled = true
+verify_jwt = true
+import_map = "./functions/activate-trial/deno.json"
+entrypoint = "./functions/activate-trial/index.ts"
+
 [functions.cancel-subscription]
 enabled = true
 verify_jwt = true
