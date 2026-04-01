@@ -50,6 +50,7 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
 import com.squarenova.emaanwallpapers.theme.AppTextSecondary
 import com.squarenova.emaanwallpapers.theme.BrandGreen
@@ -98,7 +99,8 @@ data class UserRow(
     val is_subscribed: Boolean? = false,
     val subscription_status: String? = null,
     val trial_end: String? = null,
-    val razorpay_subscription_id: String? = null
+    val razorpay_subscription_id: String? = null,
+    val current_period_end: String? = null
 )
 
 enum class WallpaperFilter(val label: String, val emoji: String, val description: String) {
@@ -182,6 +184,7 @@ fun HomeScreen(navController: NavController) {
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     var redirectedToSubscription by remember { mutableStateOf(false) }
+    var lastTrackedSubscriptionStatus by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(isLoading, user?.is_subscribed, user?.phone_number) {
         if (isLoading || redirectedToSubscription) return@LaunchedEffect
@@ -217,47 +220,18 @@ fun HomeScreen(navController: NavController) {
                 if (refreshed.is_subscribed == true) {
                     return@LaunchedEffect
                 }
-                if (!refreshed.razorpay_subscription_id.isNullOrBlank()) {
-                    Log.i(
-                        "HOME_TRIAL_RECOVERY",
-                        "Access guard: sub id set but not subscribed — activateTrialWithRetries"
-                    )
-                    SubscriptionApi.activateTrialWithRetries(phone).fold(
-                        onSuccess = {
-                            try {
-                                val again = SupabaseClient.client
-                                    .postgrest["users"]
-                                    .select(
-                                        columns = Columns.list(
-                                            "phone_number",
-                                            "first_name",
-                                            "last_name",
-                                            "avatar_url",
-                                            "is_subscribed",
-                                            "subscription_status",
-                                            "trial_end",
-                                            "razorpay_subscription_id"
-                                        )
-                                    ) { filter { eq("phone_number", phone) } }
-                                    .decodeSingle<UserRow>()
-                                user = again
-                                avatarUrl = again.avatar_url
-                                cachedFirstName = again.first_name
-                            } catch (e: Exception) {
-                                Log.e("HOME_TRIAL_RECOVERY", e.message ?: "refresh")
-                            }
-                        },
-                        onFailure = {
-                            Log.w("HOME_TRIAL_RECOVERY", "Access guard recovery: ${it.message}")
-                        }
-                    )
-                }
             } catch (e: Exception) {
                 Log.e("HOME_ACCESS_REFRESH", e.message ?: "Unknown")
             }
         }
 
         if (!redirectedToSubscription && user?.is_subscribed != true) {
+            val reason = when (user?.subscription_status?.lowercase()) {
+                "expired" -> "expired"
+                else -> "not_subscribed"
+            }
+            AnalyticsManager.track("home_access_blocked", mapOf("reason" to reason))
+            AnalyticsManager.track("paywall_shown", mapOf("reason" to reason))
             Log.d(
                 "HOME_ACCESS_GUARD",
                 "Redirecting: userSubscribed=${user?.is_subscribed}"
@@ -285,6 +259,7 @@ fun HomeScreen(navController: NavController) {
         try {
             val phone = dataStoreManager.phoneNumber.firstOrNull()
             if (!phone.isNullOrEmpty()) {
+                SubscriptionApi.refreshSubscriptionStatus(phone)
                 val result = SupabaseClient.client
                     .postgrest["users"]
                     .select(
@@ -304,52 +279,26 @@ fun HomeScreen(navController: NavController) {
                 avatarUrl = result.avatar_url
                 cachedFirstName = result.first_name
 
-                if (result.is_subscribed != true &&
-                    !result.razorpay_subscription_id.isNullOrBlank()
-                ) {
-                    Log.i(
-                        "HOME_TRIAL_RECOVERY",
-                        "Sub id present but is_subscribed false — retrying activateTrial"
-                    )
-                    SubscriptionApi.activateTrialWithRetries(phone).fold(
-                        onSuccess = {
-                            try {
-                                val again = SupabaseClient.client
-                                    .postgrest["users"]
-                                    .select(
-                                        columns = Columns.list(
-                                            "phone_number",
-                                            "first_name",
-                                            "last_name",
-                                            "avatar_url",
-                                            "is_subscribed",
-                                            "subscription_status",
-                                            "trial_end",
-                                            "razorpay_subscription_id"
-                                        )
-                                    ) { filter { eq("phone_number", phone) } }
-                                    .decodeSingle<UserRow>()
-                                user = again
-                                avatarUrl = again.avatar_url
-                                cachedFirstName = again.first_name
-                                Log.i("HOME_TRIAL_RECOVERY", "User row refreshed after recovery")
-                            } catch (e: Exception) {
-                                Log.e("HOME_TRIAL_RECOVERY", e.message ?: "refresh")
-                            }
-                        },
-                        onFailure = {
-                            Log.w(
-                                "HOME_TRIAL_RECOVERY",
-                                "Recovery failed: ${it.message}"
-                            )
-                        }
-                    )
-                }
             }
         } catch (e: Exception) {
             Log.e("HOME_USER_ERROR", e.message ?: "Unknown")
         } finally {
             isLoading = false
+        }
+    }
+
+    LaunchedEffect(user?.subscription_status, user?.current_period_end) {
+        val status = user?.subscription_status?.lowercase() ?: return@LaunchedEffect
+        if (status == lastTrackedSubscriptionStatus) return@LaunchedEffect
+        lastTrackedSubscriptionStatus = status
+        when (status) {
+            "active" -> AnalyticsManager.track(
+                "subscription_activated",
+                mapOf("current_period_end" to user?.current_period_end)
+            )
+            "cancelled" -> AnalyticsManager.track("subscription_cancelled")
+            "expired" -> AnalyticsManager.track("trial_expired")
+            "halted" -> AnalyticsManager.track("subscription_charge_failed")
         }
     }
 
@@ -361,6 +310,7 @@ fun HomeScreen(navController: NavController) {
                     try {
                         val phone = dataStoreManager.phoneNumber.firstOrNull()
                         if (!phone.isNullOrEmpty()) {
+                            SubscriptionApi.refreshSubscriptionStatus(phone)
                             val result = SupabaseClient.client
                                 .postgrest["users"]
                                 .select(

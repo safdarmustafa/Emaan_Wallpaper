@@ -11,7 +11,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 object SubscriptionApi {
-
     private const val TAG = "SubscriptionApi"
 
     private const val BASE_URL =
@@ -24,9 +23,11 @@ object SubscriptionApi {
     private val JSON = "application/json".toMediaType()
 
     private val client = OkHttpClient()
+    private const val RETRY_ATTEMPTS = 3
+    private const val RETRY_DELAY_MS = 1200L
 
     /** Supabase Edge Functions return JSON like `{"code":"NOT_FOUND","message":"..."}` or `{ "error": "..." }`. */
-    private fun parseEdgeFunctionError(body: String): String {
+    private fun parseEdgeFunctionError(body: String, functionName: String? = null): String {
         return try {
             val o = JSONObject(body)
             val code = o.optString("code", "")
@@ -40,7 +41,11 @@ object SubscriptionApi {
             }
             when {
                 msg.isNotBlank() && code == "NOT_FOUND" ->
-                    "$msg — deploy the function: supabase functions deploy activate-trial"
+                    if (!functionName.isNullOrBlank()) {
+                        "$msg — deploy edge function: $functionName"
+                    } else {
+                        "$msg — deploy the required edge function"
+                    }
                 msg.isNotBlank() -> msg
                 else -> body.ifBlank { "Request failed" }
             }
@@ -63,7 +68,7 @@ object SubscriptionApi {
 
             if (!response.isSuccessful) {
                 return@withContext Result.failure(
-                    Exception(parseEdgeFunctionError(body).ifBlank { "createOrder failed" })
+                        Exception(parseEdgeFunctionError(body, "create-order").ifBlank { "createOrder failed" })
                 )
             }
 
@@ -78,20 +83,17 @@ object SubscriptionApi {
         }
     }
 
-    /**
-     * STEP 3 — After ₹5 payment success. Persists [razorpay_payment_id] and creates Razorpay subscription.
-     */
-    suspend fun createSubscription(phone: String, razorpayPaymentId: String): Result<String> =
-        withContext(Dispatchers.IO) {
+    suspend fun verifyPayment(phone: String, paymentId: String, orderId: String): Result<Unit> =
+        withRetry("verifyPayment") {
             try {
-
                 val json = JSONObject().apply {
                     put("phone", phone)
-                    put("razorpay_payment_id", razorpayPaymentId)
+                    put("payment_id", paymentId)
+                    put("order_id", orderId)
                 }
 
                 val request = Request.Builder()
-                    .url(BASE_URL + "razorpay-subscription")
+                    .url(BASE_URL + "verify-payment")
                     .addHeader("Authorization", "Bearer $ANON_KEY")
                     .addHeader("Content-Type", "application/json")
                     .post(json.toString().toRequestBody(JSON))
@@ -101,33 +103,25 @@ object SubscriptionApi {
                 val body = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
-                    return@withContext Result.failure(
-                        Exception(parseEdgeFunctionError(body).ifBlank { "createSubscription failed" })
+                    return@withRetry Result.failure(
+                        Exception(parseEdgeFunctionError(body, "verify-payment").ifBlank { "verifyPayment failed" })
                     )
                 }
-
-                val subscriptionId = JSONObject(body).optString("subscription_id")
-
-                if (subscriptionId.isBlank()) {
-                    Result.failure(Exception("No subscription_id received"))
-                } else {
-                    Result.success(subscriptionId)
-                }
-
+                Result.success(Unit)
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
 
-    suspend fun activateTrial(phone: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
+    suspend fun startTrial(phone: String): Result<Unit> =
+        withRetry("startTrial") {
             try {
                 val json = JSONObject().apply {
                     put("phone", phone)
                 }
 
                 val request = Request.Builder()
-                    .url(BASE_URL + "activate-trial")
+                    .url(BASE_URL + "start-trial")
                     .addHeader("Authorization", "Bearer $ANON_KEY")
                     .addHeader("Content-Type", "application/json")
                     .post(json.toString().toRequestBody(JSON))
@@ -137,8 +131,8 @@ object SubscriptionApi {
                 val body = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
-                    return@withContext Result.failure(
-                        Exception(parseEdgeFunctionError(body).ifBlank { "activateTrial failed" })
+                    return@withRetry Result.failure(
+                        Exception(parseEdgeFunctionError(body, "start-trial").ifBlank { "startTrial failed" })
                     )
                 }
 
@@ -148,54 +142,141 @@ object SubscriptionApi {
             }
         }
 
-    /**
-     * Retries [activateTrial] for transient races (mandate OK, Razorpay status lag).
-     * Used after mandate success and for Splash/Home recovery.
-     */
-    suspend fun activateTrialWithRetries(
-        phone: String,
-        maxAttempts: Int = 3,
-        delayMs: Long = 1500L
-    ): Result<Unit> {
-        var lastError: Exception? = null
-        for (attempt in 1..maxAttempts) {
-            Log.d(
-                TAG,
-                "activateTrialWithRetries attempt $attempt/$maxAttempts phone=$phone"
-            )
-            val r = activateTrial(phone)
-            r.fold(
-                onSuccess = {
-                    Log.i(
-                        TAG,
-                        "activateTrialWithRetries success on attempt $attempt phone=$phone"
-                    )
-                    return Result.success(Unit)
-                },
-                onFailure = { e ->
-                    lastError = e as? Exception ?: Exception(e.message)
-                    Log.w(
-                        TAG,
-                        "activateTrialWithRetries attempt $attempt failed: ${e.message}"
-                    )
-                    if (attempt < maxAttempts) {
-                        Log.d(
-                            TAG,
-                            "activateTrialWithRetries waiting ${delayMs}ms before retry"
-                        )
-                        delay(delayMs)
-                    }
-                }
-            )
+    suspend fun createSubscription(phone: String): Result<String> = withRetry("createSubscription") {
+        try {
+            val json = JSONObject().apply {
+                put("phone", phone)
+            }
+
+            val request = Request.Builder()
+                .url(BASE_URL + "create-subscription")
+                .addHeader("Authorization", "Bearer $ANON_KEY")
+                .addHeader("Content-Type", "application/json")
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                return@withRetry Result.failure(
+                    Exception(parseEdgeFunctionError(body, "create-subscription").ifBlank { "createSubscription failed" })
+                )
+            }
+
+            val subscriptionId = JSONObject(body).optString("subscription_id")
+            if (subscriptionId.isBlank()) {
+                Result.failure(Exception("No subscription_id received"))
+            } else {
+                Result.success(subscriptionId)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
-        Log.e(
-            TAG,
-            "activateTrialWithRetries failed after $maxAttempts attempts: ${lastError?.message}"
-        )
-        return Result.failure(
-            lastError ?: Exception("activateTrial failed after $maxAttempts attempts")
-        )
     }
+
+    suspend fun verifyMandate(subscriptionId: String): Result<String> = withRetry("verifyMandate") {
+        try {
+            val json = JSONObject().apply { put("subscription_id", subscriptionId) }
+            val request = Request.Builder()
+                .url(BASE_URL + "validate-subscription-status")
+                .addHeader("Authorization", "Bearer $ANON_KEY")
+                .addHeader("Content-Type", "application/json")
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                return@withRetry Result.failure(
+                    Exception(parseEdgeFunctionError(body, "validate-subscription-status").ifBlank { "verifyMandate failed" })
+                )
+            }
+
+            val status = JSONObject(body).optString("razorpay_status")
+            if (status == "authenticated" || status == "active") {
+                Result.success(status)
+            } else {
+                Result.failure(Exception("Mandate not approved yet (status: $status)"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Razorpay status can be eventually consistent right after Paytm/UPI approval.
+     * Poll briefly before declaring failure to avoid false-negative UX.
+     */
+    suspend fun verifyMandateWithPolling(
+        subscriptionId: String,
+        attempts: Int = 6,
+        delayMs: Long = 2500L
+    ): Result<String> = withContext(Dispatchers.IO) {
+        var lastError: Throwable? = null
+        repeat(attempts) { idx ->
+            val attempt = idx + 1
+            Log.d(TAG, "event=mandate_poll_attempt attempt=$attempt/$attempts sub=$subscriptionId")
+            val r = verifyMandate(subscriptionId)
+            if (r.isSuccess) {
+                Log.i(TAG, "event=mandate_poll_success attempt=$attempt sub=$subscriptionId")
+                return@withContext r
+            }
+            val message = r.exceptionOrNull()?.message.orEmpty().lowercase()
+            lastError = r.exceptionOrNull()
+
+            // Terminal statuses shouldn't be retried.
+            if ("cancelled" in message || "halted" in message || "completed" in message) {
+                return@withContext Result.failure(
+                    Exception(r.exceptionOrNull()?.message ?: "Mandate verification failed")
+                )
+            }
+            if (attempt < attempts) delay(delayMs)
+        }
+        Result.failure(lastError ?: Exception("Mandate verification timed out"))
+    }
+
+    suspend fun refreshSubscriptionStatus(phone: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val json = JSONObject().apply { put("phone", phone) }
+            val request = Request.Builder()
+                .url(BASE_URL + "validate-subscription-status")
+                .addHeader("Authorization", "Bearer $ANON_KEY")
+                .addHeader("Content-Type", "application/json")
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(
+                    Exception(parseEdgeFunctionError(body, "validate-subscription-status").ifBlank { "refreshSubscriptionStatus failed" })
+                )
+            }
+            val isApproved = JSONObject(body).optBoolean("is_mandate_approved", false)
+            Result.success(isApproved)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun <T> withRetry(tag: String, block: suspend () -> Result<T>): Result<T> =
+        withContext(Dispatchers.IO) {
+            var last: Throwable? = null
+            repeat(RETRY_ATTEMPTS) { idx ->
+                val attempt = idx + 1
+                Log.d(TAG, "event=retry_attempt api=$tag attempt=$attempt/$RETRY_ATTEMPTS")
+                val result = block()
+                if (result.isSuccess) {
+                    Log.i(TAG, "event=retry_success api=$tag attempt=$attempt")
+                    return@withContext result
+                }
+                last = result.exceptionOrNull()
+                Log.w(TAG, "event=retry_failure api=$tag attempt=$attempt reason=${last?.message}")
+                if (attempt < RETRY_ATTEMPTS) delay(RETRY_DELAY_MS)
+            }
+            Log.e(TAG, "event=retry_exhausted api=$tag reason=${last?.message}")
+            Result.failure(last ?: Exception("$tag failed after $RETRY_ATTEMPTS attempts"))
+        }
 
     // 🔥 STEP 3 → CANCEL SUBSCRIPTION
     suspend fun cancelSubscription(subscriptionId: String): Result<Unit> =
@@ -218,7 +299,7 @@ object SubscriptionApi {
 
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(
-                        Exception(parseEdgeFunctionError(body).ifBlank { "Cancel failed" })
+                        Exception(parseEdgeFunctionError(body, "cancel-subscription").ifBlank { "Cancel failed" })
                     )
                 }
 

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import android.util.Log
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -31,7 +32,8 @@ import kotlinx.serialization.Serializable
 private data class SubscriptionUserRow(
     val phone_number: String? = null,
     val is_subscribed: Boolean? = false,
-    val razorpay_subscription_id: String? = null
+    val razorpay_subscription_id: String? = null,
+    val subscription_status: String? = null
 )
 
 @Composable
@@ -76,6 +78,7 @@ fun SplashScreen(navController: NavController) {
                     }
                     return@LaunchedEffect
                 }
+                AnalyticsManager.identify(phone)
 
                 val row = try {
                     SupabaseClient.client
@@ -94,52 +97,34 @@ fun SplashScreen(navController: NavController) {
                             popUpTo("splash") { inclusive = true }
                         }
                     }
-
                     !row?.razorpay_subscription_id.isNullOrBlank() -> {
-                        Log.i(
-                            "SPLASH_TRIAL_RECOVERY",
-                            "razorpay_subscription_id set but is_subscribed false — activateTrialWithRetries"
-                        )
-                        SubscriptionApi.activateTrialWithRetries(phone).fold(
-                            onSuccess = {
-                                val nowSubscribed = try {
-                                    SupabaseClient.client
-                                        .postgrest["users"]
-                                        .select { filter { eq("phone_number", phone) } }
-                                        .decodeList<SubscriptionUserRow>()
-                                        .firstOrNull()
-                                        ?.is_subscribed == true
-                                } catch (e: Exception) {
-                                    Log.e("SPLASH_TRIAL_RECOVERY", "refetch", e)
-                                    false
-                                }
-                                if (nowSubscribed) {
-                                    navController.navigate("home") {
-                                        popUpTo("splash") { inclusive = true }
-                                    }
-                                } else {
-                                    Log.w(
-                                        "SPLASH_TRIAL_RECOVERY",
-                                        "Still not subscribed after recovery — subscription screen"
-                                    )
-                                    navController.navigate("subscription") {
-                                        popUpTo("splash") { inclusive = true }
-                                    }
-                                }
-                            },
-                            onFailure = { e ->
-                                Log.w(
-                                    "SPLASH_TRIAL_RECOVERY",
-                                    "activateTrialWithRetries failed: ${e.message}"
-                                )
-                                navController.navigate("subscription") {
-                                    popUpTo("splash") { inclusive = true }
-                                }
+                        SubscriptionApi.refreshSubscriptionStatus(phone)
+                        val refreshed = try {
+                            SupabaseClient.client
+                                .postgrest["users"]
+                                .select { filter { eq("phone_number", phone) } }
+                                .decodeList<SubscriptionUserRow>()
+                                .firstOrNull()
+                        } catch (_: Exception) {
+                            row
+                        }
+                        if (refreshed?.is_subscribed == true) {
+                            navController.navigate("home") {
+                                popUpTo("splash") { inclusive = true }
                             }
-                        )
+                        } else {
+                            val reason = when (refreshed?.subscription_status?.lowercase()) {
+                                "expired" -> "expired"
+                                else -> "not_subscribed"
+                            }
+                            AnalyticsManager.track("paywall_shown", mapOf("reason" to reason))
+                            navController.navigate("subscription") {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        }
                     }
-
                     else -> {
+                        AnalyticsManager.track("paywall_shown", mapOf("reason" to "not_subscribed"))
                         navController.navigate("subscription") {
                             popUpTo("splash") { inclusive = true }
                         }

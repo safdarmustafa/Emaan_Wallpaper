@@ -192,7 +192,13 @@ fun PremiumFeatureRow(
  * Full-screen interstitial after ₹5 success: explains mandate step (not a second “payment”).
  */
 @Composable
-fun SubscriptionSetupFullScreenOverlay(visible: Boolean) {
+fun SubscriptionSetupFullScreenOverlay(
+    visible: Boolean,
+    ctaText: String = "Continue",
+    ctaEnabled: Boolean = true,
+    errorText: String? = null,
+    onContinue: () -> Unit
+) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(animationSpec = tween(280)),
@@ -218,12 +224,6 @@ fun SubscriptionSetupFullScreenOverlay(visible: Boolean) {
                     modifier = Modifier.padding(28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(48.dp),
-                        color = PremiumSubscriptionColors.Gold,
-                        strokeWidth = 3.dp
-                    )
-                    Spacer(Modifier.height(24.dp))
                     Text(
                         text = "Setting up your subscription…",
                         color = PremiumSubscriptionColors.TextPrimary,
@@ -233,7 +233,7 @@ fun SubscriptionSetupFullScreenOverlay(visible: Boolean) {
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = "Next step: Approve automatic payments of ₹99/month",
+                        text = "You may see ₹5 again — this is already paid",
                         color = PremiumSubscriptionColors.TextSecondary,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
@@ -247,14 +247,30 @@ fun SubscriptionSetupFullScreenOverlay(visible: Boolean) {
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(20.dp))
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp)),
-                        color = PremiumSubscriptionColors.Gold,
-                        trackColor = Color.White.copy(alpha = 0.08f)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "This step only confirms AutoPay ₹99/month",
+                        color = PremiumSubscriptionColors.TextSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    if (!errorText.isNullOrBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = errorText,
+                            color = Color(0xFFFFCDD2),
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    Spacer(Modifier.height(22.dp))
+                    PremiumGradientCtaButton(
+                        text = ctaText,
+                        onClick = onContinue,
+                        enabled = ctaEnabled,
+                        loading = false
                     )
                 }
             }

@@ -2,7 +2,9 @@ package com.squarenova.emaanwallpapers.analytics
 
 import android.content.Context
 import com.mixpanel.android.mpmetrics.MixpanelAPI
+import com.squarenova.emaanwallpapers.BuildConfig
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Centralized Mixpanel analytics wrapper.
@@ -13,6 +15,7 @@ object AnalyticsManager {
 
     private var appContext: Context? = null
     private var token: String? = null
+    private val firedOnceKeys = ConcurrentHashMap.newKeySet<String>()
 
     /** Call from Application.onCreate. Token from BuildConfig.MIXPANEL_TOKEN */
     fun init(context: Context, mixpanelToken: String) {
@@ -28,10 +31,23 @@ object AnalyticsManager {
         return MixpanelAPI.getInstance(ctx, t, false)
     }
 
-    private fun track(eventName: String, properties: Map<String, Any> = emptyMap()) {
+    private fun globalProperties(): Map<String, Any> = mapOf(
+        "app_version" to BuildConfig.VERSION_NAME,
+        "platform" to "android",
+        "environment" to if (BuildConfig.DEBUG) "dev" else "prod"
+    )
+
+    private fun trackInternal(eventName: String, properties: Map<String, Any?> = emptyMap()) {
+        val merged = LinkedHashMap<String, Any?>()
+        merged.putAll(globalProperties())
+        merged.putAll(properties)
         val props = JSONObject().apply {
-            properties.forEach { (key, value) ->
-                put(key, value)
+            merged.forEach { (key, value) ->
+                when (value) {
+                    null -> Unit
+                    is String -> if (value.isNotBlank()) put(key, value)
+                    else -> put(key, value)
+                }
             }
         }
         getMixpanel()?.track(eventName, props)
@@ -39,21 +55,41 @@ object AnalyticsManager {
 
     /** Track screen view — call when user enters a screen */
     fun trackScreen(screenName: String) {
-        track("Screen Viewed", mapOf("screen_name" to screenName))
+        trackInternal("Screen Viewed", mapOf("screen_name" to screenName))
     }
 
     /** Track a button or action event with optional properties */
-    fun trackEvent(eventName: String, properties: Map<String, Any> = emptyMap()) {
-        track(eventName, properties)
+    fun trackEvent(eventName: String, properties: Map<String, Any?> = emptyMap()) {
+        trackInternal(eventName, properties)
+    }
+
+    /** Preferred API for new events */
+    fun track(eventName: String, props: Map<String, Any?> = emptyMap()) {
+        trackInternal(eventName, props)
+    }
+
+    /** Fires once per app process for provided key. */
+    fun trackOnce(key: String, eventName: String, props: Map<String, Any?> = emptyMap()) {
+        if (!firedOnceKeys.add(key)) return
+        trackInternal(eventName, props)
     }
 
     /** Identify user for Mixpanel People (optional, for user-level analytics) */
     fun identify(phone: String) {
+        if (phone.isBlank()) return
         getMixpanel()?.identify(phone)
+        val people = JSONObject().apply {
+            put("\$phone", phone)
+            put("platform", "android")
+            put("environment", if (BuildConfig.DEBUG) "dev" else "prod")
+            put("app_version", BuildConfig.VERSION_NAME)
+        }
+        getMixpanel()?.people?.set(people)
     }
 
     /** Reset on logout */
     fun reset() {
+        firedOnceKeys.clear()
         getMixpanel()?.reset()
     }
 

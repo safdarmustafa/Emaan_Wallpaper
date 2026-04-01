@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.network.Fast2SmsConfig
 import com.squarenova.emaanwallpapers.network.RetrofitClient
@@ -159,6 +160,7 @@ fun OtpScreen(
                                 try {
                                     // ✅ Save phone to DataStore
                                     dataStoreManager.saveLogin(phone)
+                                    AnalyticsManager.identify(phone)
 
                                     // ✅ Check if user exists in Supabase
                                     val result = SupabaseClient.client

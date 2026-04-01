@@ -52,19 +52,27 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.razorpay.Checkout
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
-import kotlinx.coroutines.Dispatchers
+import com.squarenova.emaanwallpapers.network.SupabaseClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import android.util.Log
+import io.github.jan.supabase.postgrest.postgrest
 import org.json.JSONObject
+import kotlinx.serialization.Serializable
 
 object RazorpayConfig {
     const val KEY_ID = "rzp_live_SUkaGbslh0IvIZ"
 }
+
+@Serializable
+private data class SubscriptionAnalyticsUserRow(
+    val phone_number: String? = null,
+    val trial_paid: Boolean? = false
+)
 
 @Composable
 fun SubscriptionScreen(navController: NavController) {
@@ -82,9 +90,18 @@ fun SubscriptionScreen(navController: NavController) {
 
     var currentCheckoutKind by remember { mutableStateOf(CheckoutKind.NONE) }
     var entryFeeSuccessHandled by remember { mutableStateOf(false) }
+    var mandateLaunchHandled by remember { mutableStateOf(false) }
+    var mandatePaymentSuccessReceived by remember { mutableStateOf(false) }
+    var mandateVerificationError by remember { mutableStateOf<String?>(null) }
+    var mandateRetryCooldownUntilMs by remember { mutableStateOf(0L) }
+    var retryNowMs by remember { mutableStateOf(0L) }
+    var currentOrderId by remember { mutableStateOf<String?>(null) }
+    var pendingSubscriptionId by remember { mutableStateOf<String?>(null) }
+    var hasTrialPaid by remember { mutableStateOf(false) }
+    var userStatus by remember { mutableStateOf("new") }
 
-    /** Full-screen loader after ₹5, before mandate Razorpay. */
-    var showFullScreenSetupLoader by remember { mutableStateOf(false) }
+    /** Full-screen explanation screen after ₹5, before mandate Razorpay. */
+    var showSetupExplanationScreen by remember { mutableStateOf(false) }
 
     /** Post–mandate success; user taps Continue → Home. */
     var showTrialSuccessScreen by remember { mutableStateOf(false) }
@@ -93,6 +110,20 @@ fun SubscriptionScreen(navController: NavController) {
 
     LaunchedEffect(Unit) {
         phone = dataStoreManager.phoneNumber.firstOrNull() ?: ""
+        if (phone.isNotBlank()) {
+            AnalyticsManager.identify(phone)
+            val row = try {
+                SupabaseClient.client
+                    .postgrest["users"]
+                    .select { filter { eq("phone_number", phone) } }
+                    .decodeList<SubscriptionAnalyticsUserRow>()
+                    .firstOrNull()
+            } catch (_: Exception) {
+                null
+            }
+            hasTrialPaid = row?.trial_paid == true
+            userStatus = if (row == null) "new" else "returning"
+        }
         Checkout.preload(context)
         SubscriptionManager.restorePendingCheckoutFromPersistenceIfNeeded()
         val initialKind = SubscriptionManager.peekPersistedCheckoutKind()
@@ -123,10 +154,17 @@ fun SubscriptionScreen(navController: NavController) {
             bannerMessage = null
         }
     }
+    LaunchedEffect(mandateRetryCooldownUntilMs) {
+        while (mandateRetryCooldownUntilMs > 0L && System.currentTimeMillis() < mandateRetryCooldownUntilMs) {
+            retryNowMs = System.currentTimeMillis()
+            delay(400)
+        }
+        retryNowMs = System.currentTimeMillis()
+    }
 
     fun navigateBackToLogin() {
         scope.launch {
-            showFullScreenSetupLoader = false
+            showSetupExplanationScreen = false
             showTrialSuccessScreen = false
             dataStoreManager.logout()
             navController.navigate("login") {
@@ -139,14 +177,14 @@ fun SubscriptionScreen(navController: NavController) {
     fun openMandateCheckout(subscriptionId: String) {
         val hostActivity = activity
         if (hostActivity == null) {
-            showFullScreenSetupLoader = false
+            showSetupExplanationScreen = false
             isLoading = false
             bannerIsSuccess = false
             bannerMessage = "Cannot open AutoPay screen. Restart the app."
             Log.e("SUBSCRIPTION", "openMandateCheckout: activity null")
             return
         }
-        showFullScreenSetupLoader = false
+        showSetupExplanationScreen = false
         currentCheckoutKind = CheckoutKind.MANDATE
         SubscriptionManager.prepareCheckout(CheckoutKind.MANDATE)
         Log.i("SUBSCRIPTION", "Opening mandate checkout subscriptionId=$subscriptionId")
@@ -156,15 +194,16 @@ fun SubscriptionScreen(navController: NavController) {
             val options = JSONObject().apply {
                 put("subscription_id", subscriptionId)
                 put("name", "Emaan Wallpapers")
-                put("description", "Approve AutoPay · Confirm subscription")
+                put("description", "Approve AutoPay ₹99/month")
                 put("prefill.contact", phone)
+                put("prefill.email", "user@yourapp.com")
             }
             checkout.open(hostActivity, options)
         } catch (e: Exception) {
             Log.e("SUBSCRIPTION", "openMandateCheckout", e)
             currentCheckoutKind = CheckoutKind.NONE
             isLoading = false
-            showFullScreenSetupLoader = false
+            showSetupExplanationScreen = false
             bannerIsSuccess = false
             bannerMessage = e.message ?: "Could not open subscription confirmation"
         }
@@ -188,14 +227,32 @@ fun SubscriptionScreen(navController: NavController) {
         }
 
         scope.launch {
+            AnalyticsManager.track(
+                "trial_cta_clicked",
+                mapOf(
+                    "screen_name" to "subscription",
+                    "user_status" to userStatus,
+                    "has_trial_paid" to hasTrialPaid
+                )
+            )
             isLoading = true
             error = null
             entryFeeSuccessHandled = false
+            mandateLaunchHandled = false
+            mandatePaymentSuccessReceived = false
+            mandateVerificationError = null
+            currentOrderId = null
+            pendingSubscriptionId = null
 
             val orderResult = SubscriptionApi.createOrder()
             orderResult.fold(
                 onSuccess = { orderId ->
+                    AnalyticsManager.track(
+                        "payment_initiated",
+                        mapOf("amount" to 5, "currency" to "INR")
+                    )
                     try {
+                        currentOrderId = orderId
                         currentCheckoutKind = CheckoutKind.ENTRY_FEE
                         SubscriptionManager.prepareCheckout(CheckoutKind.ENTRY_FEE)
                         val checkout = Checkout()
@@ -206,17 +263,33 @@ fun SubscriptionScreen(navController: NavController) {
                             put("description", "₹5 one-time entry fee")
                             put("currency", "INR")
                             put("prefill.contact", phone)
+                            put("prefill.email", "user@yourapp.com")
                         }
                         checkout.open(hostActivity, options)
                     } catch (e: Exception) {
+                        AnalyticsManager.track(
+                            "payment_failed",
+                            mapOf(
+                                "error_reason" to (e.message ?: "open_checkout_failed"),
+                                "step" to "entry_fee"
+                            )
+                        )
                         Log.e("SUBSCRIPTION", "startCheckout open", e)
                         currentCheckoutKind = CheckoutKind.NONE
                         isLoading = false
+                        currentOrderId = null
                         bannerIsSuccess = false
                         bannerMessage = e.message ?: "Could not open payment"
                     }
                 },
                 onFailure = {
+                    AnalyticsManager.track(
+                        "payment_failed",
+                        mapOf(
+                            "error_reason" to (it.message ?: "create_order_failed"),
+                            "step" to "entry_fee"
+                        )
+                    )
                     error = it.message ?: "Order failed"
                     bannerIsSuccess = false
                     bannerMessage = error
@@ -226,50 +299,64 @@ fun SubscriptionScreen(navController: NavController) {
         }
     }
 
+    fun friendlyPaymentError(raw: String?): String {
+        val msg = raw?.trim().orEmpty()
+        if (msg.isBlank()) return "Payment verification failed. Please try again."
+        val lower = msg.lowercase()
+        return when {
+            "refund" in lower || "refunded" in lower ->
+                "This payment appears refunded/invalid. Please make a fresh payment and try again."
+            "replay" in lower || "already verified" in lower ->
+                "This payment was already used. Please start again with a new payment."
+            else -> msg
+        }
+    }
+
     LaunchedEffect(Unit) {
         SubscriptionManager.paymentResult.collect { result ->
             when (result) {
                 is PaymentResult.Success -> {
                     scope.launch {
-                        if (currentCheckoutKind == CheckoutKind.NONE && result.kind != CheckoutKind.NONE) {
-                            currentCheckoutKind = result.kind
+                        try {
+                            if (currentCheckoutKind == CheckoutKind.NONE && result.kind != CheckoutKind.NONE) {
+                                currentCheckoutKind = result.kind
+                                Log.d(
+                                    "SUBSCRIPTION",
+                                    "Synced currentCheckoutKind from PaymentResult.kind: ${result.kind}"
+                                )
+                            }
+
+                            val phoneForApi =
+                                dataStoreManager.phoneNumber.firstOrNull()?.trim().orEmpty()
+                                    .ifBlank { phone }
+                            if (phoneForApi.isBlank()) {
+                                isLoading = false
+                                showSetupExplanationScreen = false
+                                bannerIsSuccess = false
+                                bannerMessage = "Session expired. Please login again."
+                                currentCheckoutKind = CheckoutKind.NONE
+                                Log.e("SUBSCRIPTION", "Payment OK but phone missing from DataStore")
+                                return@launch
+                            }
+
+                            val phase = when {
+                                currentCheckoutKind != CheckoutKind.NONE -> currentCheckoutKind
+                                result.kind != CheckoutKind.NONE -> {
+                                    Log.w(
+                                        "SUBSCRIPTION",
+                                        "currentCheckoutKind was NONE; using result.kind=${result.kind}"
+                                    )
+                                    result.kind
+                                }
+                                else -> CheckoutKind.NONE
+                            }
+
                             Log.d(
                                 "SUBSCRIPTION",
-                                "Synced currentCheckoutKind from PaymentResult.kind: ${result.kind}"
+                                "PaymentResult.Success phase=$phase result.kind=${result.kind} paymentId=${result.paymentId}"
                             )
-                        }
 
-                        val phoneForApi =
-                            dataStoreManager.phoneNumber.firstOrNull()?.trim().orEmpty()
-                                .ifBlank { phone }
-                        if (phoneForApi.isBlank()) {
-                            isLoading = false
-                            showFullScreenSetupLoader = false
-                            bannerIsSuccess = false
-                            bannerMessage = "Session expired. Please login again."
-                            currentCheckoutKind = CheckoutKind.NONE
-                            Log.e("SUBSCRIPTION", "Payment OK but phone missing from DataStore")
-                            return@launch
-                        }
-
-                        val phase = when {
-                            currentCheckoutKind != CheckoutKind.NONE -> currentCheckoutKind
-                            result.kind != CheckoutKind.NONE -> {
-                                Log.w(
-                                    "SUBSCRIPTION",
-                                    "currentCheckoutKind was NONE; using result.kind=${result.kind}"
-                                )
-                                result.kind
-                            }
-                            else -> CheckoutKind.NONE
-                        }
-
-                        Log.d(
-                            "SUBSCRIPTION",
-                            "PaymentResult.Success phase=$phase result.kind=${result.kind} paymentId=${result.paymentId}"
-                        )
-
-                        when (phase) {
+                            when (phase) {
                             CheckoutKind.ENTRY_FEE -> {
                                 if (entryFeeSuccessHandled) {
                                     Log.w(
@@ -279,9 +366,17 @@ fun SubscriptionScreen(navController: NavController) {
                                     return@launch
                                 }
                                 Log.i("SUBSCRIPTION", "ENTRY_FEE success")
+                                AnalyticsManager.track(
+                                    "payment_success",
+                                    mapOf(
+                                        "payment_id" to result.paymentId,
+                                        "amount" to 5
+                                    )
+                                )
                                 entryFeeSuccessHandled = true
 
                                 val payId = result.paymentId
+                                val orderId = currentOrderId?.trim().orEmpty()
                                 if (payId.isBlank()) {
                                     entryFeeSuccessHandled = false
                                     currentCheckoutKind = CheckoutKind.NONE
@@ -290,25 +385,89 @@ fun SubscriptionScreen(navController: NavController) {
                                     bannerMessage = "Missing payment id from Razorpay"
                                     return@launch
                                 }
-                                val created = SubscriptionApi.createSubscription(phoneForApi, payId)
+                                if (orderId.isBlank()) {
+                                    entryFeeSuccessHandled = false
+                                    currentCheckoutKind = CheckoutKind.NONE
+                                    isLoading = false
+                                    bannerIsSuccess = false
+                                    bannerMessage = "Order reference missing. Please retry payment."
+                                    return@launch
+                                }
+
+                                val verified = SubscriptionApi.verifyPayment(
+                                    phone = phoneForApi,
+                                    paymentId = payId,
+                                    orderId = orderId
+                                )
+                                if (verified.isFailure) {
+                                    AnalyticsManager.track(
+                                        "payment_failed",
+                                        mapOf(
+                                            "error_reason" to (verified.exceptionOrNull()?.message ?: "verify_failed"),
+                                            "step" to "entry_fee"
+                                        )
+                                    )
+                                    entryFeeSuccessHandled = false
+                                    currentCheckoutKind = CheckoutKind.NONE
+                                    isLoading = false
+                                    bannerIsSuccess = false
+                                    bannerMessage = friendlyPaymentError(
+                                        verified.exceptionOrNull()?.message
+                                    )
+                                    return@launch
+                                }
+
+                                val trialStarted = SubscriptionApi.startTrial(phoneForApi)
+                                if (trialStarted.isFailure) {
+                                    AnalyticsManager.track(
+                                        "trial_start_failed",
+                                        mapOf("error_message" to (trialStarted.exceptionOrNull()?.message ?: "unknown"))
+                                    )
+                                    entryFeeSuccessHandled = false
+                                    currentCheckoutKind = CheckoutKind.NONE
+                                    isLoading = false
+                                    bannerIsSuccess = false
+                                    bannerMessage = trialStarted.exceptionOrNull()?.message
+                                        ?: "Could not start trial."
+                                    return@launch
+                                }
+                                AnalyticsManager.track(
+                                    "trial_started",
+                                    mapOf(
+                                        "trial_end_timestamp" to (System.currentTimeMillis() + 3L * 24L * 60L * 60L * 1000L),
+                                        "user_id" to phoneForApi
+                                    )
+                                )
+
+                                val created = SubscriptionApi.createSubscription(phoneForApi)
                                 created.fold(
                                     onSuccess = { subId ->
-                                        withContext(Dispatchers.Main) {
-                                            showFullScreenSetupLoader = true
-                                            isLoading = true
-                                            Log.i(
-                                                "SUBSCRIPTION",
-                                                "Pre-mandate full-screen loader (800ms) before mandate checkout"
+                                        AnalyticsManager.track(
+                                            "subscription_created",
+                                            mapOf(
+                                                "subscription_id" to subId,
+                                                "plan_id" to "monthly_99"
                                             )
-                                            delay(800)
-                                            openMandateCheckout(subId)
-                                        }
+                                        )
+                                        AnalyticsManager.track(
+                                            "mandate_screen_shown",
+                                            mapOf("source" to "after_trial_setup")
+                                        )
+                                        pendingSubscriptionId = subId
+                                        showSetupExplanationScreen = true
+                                        isLoading = false
+                                        mandateLaunchHandled = false
+                                        mandateVerificationError = null
                                     },
                                     onFailure = { e ->
+                                        AnalyticsManager.track(
+                                            "subscription_creation_failed",
+                                            mapOf("error_message" to (e.message ?: "unknown"))
+                                        )
                                         entryFeeSuccessHandled = false
                                         currentCheckoutKind = CheckoutKind.NONE
                                         isLoading = false
-                                        showFullScreenSetupLoader = false
+                                        showSetupExplanationScreen = false
                                         bannerIsSuccess = false
                                         bannerMessage = e.message
                                             ?: "Could not create subscription after payment. Contact support with your payment id."
@@ -318,56 +477,112 @@ fun SubscriptionScreen(navController: NavController) {
                             }
 
                             CheckoutKind.MANDATE -> {
-                                Log.i("SUBSCRIPTION", "MANDATE success")
-                                val activated =
-                                    SubscriptionApi.activateTrialWithRetries(phoneForApi)
-                                activated.fold(
-                                    onSuccess = {
+                                val subId = pendingSubscriptionId?.trim().orEmpty()
+                                if (subId.isBlank()) {
+                                    isLoading = false
+                                    showSetupExplanationScreen = false
+                                    bannerIsSuccess = false
+                                    bannerMessage = "Subscription reference missing. Please retry."
+                                    currentCheckoutKind = CheckoutKind.NONE
+                                    return@launch
+                                }
+                                Log.i("SUBSCRIPTION", "MANDATE success callback; verifying mandate status")
+                                bannerIsSuccess = true
+                                bannerMessage = "Finalizing AutoPay approval..."
+                                val mandateVerified = SubscriptionApi.verifyMandateWithPolling(subId)
+                                mandateVerified.fold(
+                                    onSuccess = { status ->
+                                        AnalyticsManager.track(
+                                            "mandate_success",
+                                            mapOf("subscription_id" to subId)
+                                        )
+                                        if (status == "active") {
+                                            AnalyticsManager.track(
+                                                "subscription_activated",
+                                                mapOf("current_period_end" to null)
+                                            )
+                                        }
+                                        Log.i("SUBSCRIPTION", "Mandate verified status=$status; allowing navigation")
                                         isLoading = false
-                                        showFullScreenSetupLoader = false
+                                        showSetupExplanationScreen = false
                                         currentCheckoutKind = CheckoutKind.NONE
                                         entryFeeSuccessHandled = false
+                                        mandateLaunchHandled = false
+                                        pendingSubscriptionId = null
+                                        currentOrderId = null
+                                        mandatePaymentSuccessReceived = false
+                                        mandateVerificationError = null
                                         showTrialSuccessScreen = true
-                                        Log.i("SUBSCRIPTION", "Trial activated — showing success screen")
                                     },
                                     onFailure = { e ->
-                                        currentCheckoutKind = CheckoutKind.NONE
-                                        isLoading = false
-                                        showFullScreenSetupLoader = false
-                                        bannerIsSuccess = false
-                                        val reason = e.message
-                                            ?: "Trial could not be activated after 3 attempts."
-                                        bannerMessage = reason
-                                        Log.e(
-                                            "SUBSCRIPTION",
-                                            "activateTrialWithRetries final failure: $reason",
-                                            e
+                                        AnalyticsManager.track(
+                                            "mandate_failed",
+                                            mapOf("error_reason" to (e.message ?: "verification_failed"))
                                         )
+                                        Log.e("SUBSCRIPTION", "Mandate verification failed", e)
+                                        isLoading = false
+                                        showSetupExplanationScreen = true
+                                        mandatePaymentSuccessReceived = true
+                                        mandateLaunchHandled = false
+                                        mandateRetryCooldownUntilMs = System.currentTimeMillis() + 3000L
+                                        mandateVerificationError =
+                                            "AutoPay approval failed. Please try again.\n" +
+                                                "UPI app may have declined or timed out. Retry with the same/default account."
+                                        bannerIsSuccess = false
+                                        bannerMessage = "AutoPay approval failed. Please try again."
                                     }
                                 )
                             }
 
                             CheckoutKind.NONE -> {
                                 isLoading = false
-                                showFullScreenSetupLoader = false
+                                showSetupExplanationScreen = false
                                 Log.w(
                                     "SUBSCRIPTION",
                                     "Ignoring Success: phase NONE (stale or unknown callback)"
                                 )
                             }
                         }
+                        } catch (t: Throwable) {
+                            Log.e("SUBSCRIPTION", "Crash prevented in payment success handler", t)
+                            isLoading = false
+                            showSetupExplanationScreen = false
+                            showTrialSuccessScreen = false
+                            bannerIsSuccess = false
+                            bannerMessage = "Something went wrong after payment. Please reopen subscription and retry."
+                            currentCheckoutKind = CheckoutKind.NONE
+                            entryFeeSuccessHandled = false
+                            mandateLaunchHandled = false
+                        }
                     }
                 }
 
                 is PaymentResult.Error -> {
+                    val failedStep = if (currentCheckoutKind == CheckoutKind.MANDATE) "mandate" else "entry_fee"
+                    if (failedStep == "mandate") {
+                        AnalyticsManager.track(
+                            "mandate_failed",
+                            mapOf("error_reason" to result.message)
+                        )
+                    } else {
+                        AnalyticsManager.track(
+                            "payment_failed",
+                            mapOf(
+                                "error_reason" to result.message,
+                                "step" to "entry_fee"
+                            )
+                        )
+                    }
                     error = result.message
                     isLoading = false
-                    showFullScreenSetupLoader = false
+                    showSetupExplanationScreen = false
                     showTrialSuccessScreen = false
                     bannerIsSuccess = false
                     bannerMessage = result.message
                     currentCheckoutKind = CheckoutKind.NONE
                     entryFeeSuccessHandled = false
+                    mandatePaymentSuccessReceived = false
+                    mandateVerificationError = null
                     Log.e("SUBSCRIPTION", "PaymentResult.Error: ${result.message}")
                 }
             }
@@ -502,7 +717,7 @@ fun SubscriptionScreen(navController: NavController) {
                     text = "Start ₹5 Trial",
                     onClick = { startCheckout() },
                     enabled = !showTrialSuccessScreen,
-                    loading = isLoading && !showFullScreenSetupLoader
+                    loading = isLoading && !showSetupExplanationScreen
                 )
 
                 Text(
@@ -531,8 +746,70 @@ fun SubscriptionScreen(navController: NavController) {
             }
         }
 
-        SubscriptionSetupFullScreenOverlay(visible = showFullScreenSetupLoader)
-
+        SubscriptionSetupFullScreenOverlay(
+            visible = showSetupExplanationScreen,
+            ctaText = if (mandatePaymentSuccessReceived) "Retry AutoPay Approval" else "Continue",
+            ctaEnabled = !mandatePaymentSuccessReceived || retryNowMs >= mandateRetryCooldownUntilMs,
+            errorText = mandateVerificationError,
+            onContinue = {
+                if (mandateLaunchHandled) return@SubscriptionSetupFullScreenOverlay
+                val subId = pendingSubscriptionId
+                if (subId.isNullOrBlank()) {
+                    bannerIsSuccess = false
+                    bannerMessage = "Subscription setup incomplete. Please retry."
+                    showSetupExplanationScreen = false
+                    isLoading = false
+                    currentCheckoutKind = CheckoutKind.NONE
+                    return@SubscriptionSetupFullScreenOverlay
+                }
+                mandateLaunchHandled = true
+                isLoading = true
+                if (mandatePaymentSuccessReceived) {
+                    AnalyticsManager.track("mandate_retry_clicked")
+                    scope.launch {
+                        bannerIsSuccess = true
+                        bannerMessage = "Retrying AutoPay verification..."
+                        SubscriptionApi.verifyMandateWithPolling(subId).fold(
+                            onSuccess = {
+                                AnalyticsManager.track(
+                                    "mandate_success",
+                                    mapOf("subscription_id" to subId)
+                                )
+                                isLoading = false
+                                showSetupExplanationScreen = false
+                                currentCheckoutKind = CheckoutKind.NONE
+                                entryFeeSuccessHandled = false
+                                mandateLaunchHandled = false
+                                pendingSubscriptionId = null
+                                currentOrderId = null
+                                mandatePaymentSuccessReceived = false
+                                mandateVerificationError = null
+                                showTrialSuccessScreen = true
+                            },
+                            onFailure = { e ->
+                                AnalyticsManager.track(
+                                    "mandate_failed",
+                                    mapOf("error_reason" to (e.message ?: "verification_failed"))
+                                )
+                                isLoading = false
+                                showSetupExplanationScreen = true
+                                mandateLaunchHandled = false
+                                mandatePaymentSuccessReceived = true
+                                mandateRetryCooldownUntilMs = System.currentTimeMillis() + 3000L
+                                mandateVerificationError =
+                                    "AutoPay approval failed. Please try again.\n" +
+                                        "UPI app may have declined or timed out. Retry with the same/default account."
+                                bannerIsSuccess = false
+                                bannerMessage = "AutoPay approval failed. Please try again."
+                            }
+                        )
+                    }
+                } else {
+                    AnalyticsManager.track("mandate_initiated")
+                    openMandateCheckout(subId)
+                }
+            }
+        )
         TrialActivatedSuccessOverlay(
             visible = showTrialSuccessScreen,
             onContinue = {

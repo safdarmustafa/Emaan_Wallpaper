@@ -308,6 +308,7 @@ fun ProfileScreen(navController: NavController) {
                                 .update(SubscriptionStatusPatch(subscription_status = "cancel_requested")) {
                                     filter { eq("phone_number", phone) }
                                 }
+                            AnalyticsManager.track("subscription_cancel_requested")
                             saveMessage = "Trial cancelled. You will not be charged ₹99"
                             showCancelDialog = false
                             refreshSubscriptionState()
@@ -323,6 +324,7 @@ fun ProfileScreen(navController: NavController) {
 
                         val result = SubscriptionApi.cancelSubscription(subId)
                         if (result.isSuccess) {
+                            AnalyticsManager.track("subscription_cancel_requested")
                             saveMessage = "Cancellation requested"
                             showCancelDialog = false
                             refreshSubscriptionState()

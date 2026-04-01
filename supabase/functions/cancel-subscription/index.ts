@@ -12,9 +12,12 @@ serve(async (req) => {
   }
 
   try {
+    const log = (step: string, meta: Record<string, unknown> = {}) =>
+      console.log(JSON.stringify({ fn: "cancel-subscription", step, ...meta }));
     const body = await req.json();
     const subscription_id =
       typeof body.subscription_id === "string" ? body.subscription_id.trim() : "";
+    const cancelNowIfTrial = body.cancel_now_if_trial !== false;
 
     if (!subscription_id) {
       return new Response(JSON.stringify({ error: "subscription_id required" }), {
@@ -54,10 +57,42 @@ serve(async (req) => {
     const subStatus = (rows[0].subscription_status ?? "").toLowerCase();
 
     if (subStatus === "trial") {
+      if (cancelNowIfTrial) {
+        const keyId = Deno.env.get("RAZORPAY_KEY_ID");
+        const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+        if (keyId && keySecret) {
+          const auth = btoa(`${keyId}:${keySecret}`);
+          const rz = await fetch(
+            `https://api.razorpay.com/v1/subscriptions/${subscription_id}/cancel`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Basic ${auth}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+            },
+          );
+          if (!rz.ok) {
+            const rzData = await rz.json();
+            const razorpayMsg =
+              rzData?.error?.description ||
+              rzData?.error?.message ||
+              JSON.stringify(rzData);
+            return new Response(JSON.stringify({ error: `Razorpay: ${razorpayMsg}` }), {
+              status: 502,
+              headers: jsonHeaders,
+            });
+          }
+          log("trial_razorpay_cancelled", { subscription_id });
+        }
+      }
+
       const cancelledAt = new Date().toISOString();
       const { error: dbErr } = await supabase
         .from("users")
         .update({
+          is_subscribed: false,
           subscription_status: "cancel_requested",
           cancelled_at: cancelledAt,
         })
@@ -69,7 +104,8 @@ serve(async (req) => {
           headers: jsonHeaders,
         });
       }
-      return new Response(JSON.stringify({ success: true, mode: "trial_local_cancel" }), {
+      log("trial_cancel_requested", { subscription_id, cancel_now_if_trial: cancelNowIfTrial });
+      return new Response(JSON.stringify({ success: true, mode: "trial_cancel" }), {
         status: 200,
         headers: jsonHeaders,
       });
@@ -115,7 +151,10 @@ serve(async (req) => {
 
     const { error: dbError, data: updated } = await supabase
       .from("users")
-      .update({ subscription_status: "cancel_requested" })
+      .update({
+        subscription_status: "cancel_requested",
+        cancelled_at: new Date().toISOString(),
+      })
       .eq("razorpay_subscription_id", subscription_id)
       .select("phone_number");
 
@@ -133,6 +172,7 @@ serve(async (req) => {
       });
     }
 
+    log("cancel_requested", { subscription_id });
     return new Response(JSON.stringify({ success: true, mode: "razorpay_cancel" }), {
       status: 200,
       headers: jsonHeaders,
