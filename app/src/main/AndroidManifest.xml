@@ -26,9 +26,11 @@
             android:name="com.mixpanel.android.MPConfig.EnableDebugLogging"
             android:value="true" />
 
+        <!-- singleTop: returning from UPI / Razorpay should reuse the same activity (payment listener + state). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.EmaanWallpapers">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

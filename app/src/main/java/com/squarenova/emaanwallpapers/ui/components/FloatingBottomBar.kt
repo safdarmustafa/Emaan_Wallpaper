@@ -2,6 +2,7 @@ package com.squarenova.emaanwallpapers.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -39,6 +40,7 @@ import com.squarenova.emaanwallpapers.theme.HomeFloatingBarSurface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -104,6 +106,14 @@ fun FloatingBottomBar(
                     ),
                     label = "navPill"
                 )
+                val iconScale by animateFloatAsState(
+                    targetValue = if (selected) 1.08f else 1f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "navIconScale"
+                )
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -130,7 +140,9 @@ fun FloatingBottomBar(
                             imageVector = if (selected) item.iconFilled else item.iconOutlined,
                             contentDescription = item.label,
                             tint = tint,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier
+                                .size(24.dp)
+                                .scale(iconScale)
                         )
                         Spacer(modifier = Modifier.height(3.dp))
                         Text(

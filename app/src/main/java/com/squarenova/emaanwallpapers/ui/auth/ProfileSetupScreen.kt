@@ -183,12 +183,10 @@ fun ProfileSetupScreen(navController: NavController) {
                             }
 
                             if (isSubscribed) {
-                                dataStoreManager.setSubscribed()
                                 navController.navigate("home") {
                                     popUpTo("profile_setup") { inclusive = true }
                                 }
                             } else {
-                                dataStoreManager.setUnsubscribed()
                                 navController.navigate("subscription") {
                                     popUpTo("profile_setup") { inclusive = true }
                                 }
@@ -250,7 +248,6 @@ fun ProfileSetupScreen(navController: NavController) {
                         }
                     }
                     dataStoreManager.setProfileCompleted()
-                    dataStoreManager.setUnsubscribed()
                     navController.navigate("subscription") {
                         popUpTo("profile_setup") { inclusive = true }
                     }

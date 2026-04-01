@@ -16,11 +16,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
+import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.Serializable
@@ -28,7 +30,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 private data class SubscriptionUserRow(
     val phone_number: String? = null,
-    val is_subscribed: Boolean? = false
+    val is_subscribed: Boolean? = false,
+    val razorpay_subscription_id: String? = null
 )
 
 @Composable
@@ -74,26 +77,72 @@ fun SplashScreen(navController: NavController) {
                     return@LaunchedEffect
                 }
 
-                val serverSubscribed = try {
+                val row = try {
                     SupabaseClient.client
                         .postgrest["users"]
                         .select { filter { eq("phone_number", phone) } }
                         .decodeList<SubscriptionUserRow>()
                         .firstOrNull()
-                        ?.is_subscribed == true
                 } catch (e: Exception) {
-                    false
+                    Log.e("SplashScreen", "users fetch", e)
+                    null
                 }
 
-                if (serverSubscribed) {
-                    dataStoreManager.setSubscribed()
-                    navController.navigate("home") {
-                        popUpTo("splash") { inclusive = true }
+                when {
+                    row?.is_subscribed == true -> {
+                        navController.navigate("home") {
+                            popUpTo("splash") { inclusive = true }
+                        }
                     }
-                } else {
-                    dataStoreManager.setUnsubscribed()
-                    navController.navigate("subscription") {
-                        popUpTo("splash") { inclusive = true }
+
+                    !row?.razorpay_subscription_id.isNullOrBlank() -> {
+                        Log.i(
+                            "SPLASH_TRIAL_RECOVERY",
+                            "razorpay_subscription_id set but is_subscribed false — activateTrialWithRetries"
+                        )
+                        SubscriptionApi.activateTrialWithRetries(phone).fold(
+                            onSuccess = {
+                                val nowSubscribed = try {
+                                    SupabaseClient.client
+                                        .postgrest["users"]
+                                        .select { filter { eq("phone_number", phone) } }
+                                        .decodeList<SubscriptionUserRow>()
+                                        .firstOrNull()
+                                        ?.is_subscribed == true
+                                } catch (e: Exception) {
+                                    Log.e("SPLASH_TRIAL_RECOVERY", "refetch", e)
+                                    false
+                                }
+                                if (nowSubscribed) {
+                                    navController.navigate("home") {
+                                        popUpTo("splash") { inclusive = true }
+                                    }
+                                } else {
+                                    Log.w(
+                                        "SPLASH_TRIAL_RECOVERY",
+                                        "Still not subscribed after recovery — subscription screen"
+                                    )
+                                    navController.navigate("subscription") {
+                                        popUpTo("splash") { inclusive = true }
+                                    }
+                                }
+                            },
+                            onFailure = { e ->
+                                Log.w(
+                                    "SPLASH_TRIAL_RECOVERY",
+                                    "activateTrialWithRetries failed: ${e.message}"
+                                )
+                                navController.navigate("subscription") {
+                                    popUpTo("splash") { inclusive = true }
+                                }
+                            }
+                        )
+                    }
+
+                    else -> {
+                        navController.navigate("subscription") {
+                            popUpTo("splash") { inclusive = true }
+                        }
                     }
                 }
             }

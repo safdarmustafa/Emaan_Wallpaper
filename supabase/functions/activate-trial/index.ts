@@ -1,38 +1,121 @@
-// @ts-nocheck
-
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const jsonHeaders = { "Content-Type": "application/json" };
 const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
 
-serve(async (req: Request) => {
+/** Razorpay may lag updating status after mandate; we allow these states for trial activation. */
+const ALLOWED_TRIAL_STATUSES = new Set(["created", "authenticated", "active"]);
+
+serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
     });
   }
 
   try {
-    const { phone } = await req.json();
+    const body = await req.json();
+    const phone = typeof body.phone === "string" ? body.phone.trim() : "";
 
-    if (!phone || typeof phone !== "string" || phone.trim() === "") {
+    if (!phone) {
       return new Response(JSON.stringify({ error: "phone is required" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders,
       });
     }
 
-    const phoneNorm = phone.trim();
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SERVICE_ROLE_KEY")!;
+    const keyId = Deno.env.get("RAZORPAY_KEY_ID");
+    const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+
+    if (!keyId || !keySecret) {
+      return new Response(JSON.stringify({ error: "Razorpay not configured" }), {
+        status: 503,
+        headers: jsonHeaders,
+      });
+    }
+
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    const { data: row, error: fetchErr } = await supabase
+      .from("users")
+      .select("razorpay_subscription_id, subscription_status")
+      .eq("phone_number", phone)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error("[activate-trial] user fetch error", fetchErr);
+      return new Response(JSON.stringify({ error: fetchErr.message }), {
+        status: 500,
+        headers: jsonHeaders,
+      });
+    }
+
+    if (!row) {
+      console.warn("[activate-trial] user not found phone=", phone);
+      return new Response(JSON.stringify({ error: "User not found" }), {
+        status: 404,
+        headers: jsonHeaders,
+      });
+    }
+
+    const subId = row.razorpay_subscription_id;
+    if (!subId || String(subId).trim() === "") {
+      console.warn("[activate-trial] razorpay_subscription_id is null phone=", phone);
+      return new Response(
+        JSON.stringify({
+          error: "razorpay_subscription_id is null — create subscription first",
+        }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
+
+    const auth = btoa(`${keyId}:${keySecret}`);
+    const rz = await fetch(`https://api.razorpay.com/v1/subscriptions/${subId}`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    const subJson = await rz.json();
+
+    if (!rz.ok) {
+      const msg =
+        subJson?.error?.description ||
+        subJson?.error?.message ||
+        JSON.stringify(subJson);
+      console.error("[activate-trial] Razorpay GET subscription failed", msg);
+      return new Response(JSON.stringify({ error: `Razorpay: ${msg}` }), {
+        status: 502,
+        headers: jsonHeaders,
+      });
+    }
+
+    const status = subJson?.status as string | undefined;
+    console.log(
+      "[activate-trial] Razorpay subscription status=",
+      status,
+      "subId=",
+      subId,
+    );
+
+    if (!status || !ALLOWED_TRIAL_STATUSES.has(status)) {
+      console.warn(
+        "[activate-trial] subscription status not eligible for trial:",
+        status,
+      );
+      return new Response(
+        JSON.stringify({
+          error: `Subscription not eligible for trial (status: ${status ?? "unknown"})`,
+          razorpay_status: status,
+        }),
+        { status: 403, headers: jsonHeaders },
+      );
+    }
 
     const trialEnd = new Date(Date.now() + TRIAL_MS).toISOString();
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SERVICE_ROLE_KEY")!,
-    );
-
-    const { data, error } = await supabase
+    const { data: updated, error: upErr } = await supabase
       .from("users")
       .update({
         is_subscribed: true,
@@ -40,31 +123,41 @@ serve(async (req: Request) => {
         trial_paid: true,
         trial_end: trialEnd,
       })
-      .eq("phone_number", phoneNorm)
+      .eq("phone_number", phone)
       .select("phone_number");
 
-    if (error) {
-      return new Response(
-        JSON.stringify({ error: error.message }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
-    }
-
-    if (!data || data.length === 0) {
-      return new Response(JSON.stringify({ error: "User not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
+    if (upErr) {
+      console.error("[activate-trial] DB update error", upErr);
+      return new Response(JSON.stringify({ error: upErr.message }), {
+        status: 500,
+        headers: jsonHeaders,
       });
     }
 
-    return new Response(JSON.stringify({ ok: true }), {
+    if (!updated?.length) {
+      console.error("[activate-trial] DB update returned no rows phone=", phone);
+      return new Response(
+        JSON.stringify({ error: "Update failed — no matching user row" }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
+
+    console.log(
+      "[activate-trial] trial activated OK phone=",
+      phone,
+      "trial_end=",
+      trialEnd,
+    );
+
+    return new Response(JSON.stringify({ ok: true, trial_end: trialEnd }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
     });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+  } catch (e) {
+    console.error("[activate-trial] exception", e);
+    return new Response(JSON.stringify({ error: String(e?.message ?? e) }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
     });
   }
 });

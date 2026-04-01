@@ -67,8 +67,8 @@ fun CompactTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
-                    .padding(horizontal = 12.dp),
+                    .height(44.dp)
+                    .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -80,10 +80,10 @@ fun CompactTopBar(
                         text = greeting,
                         style = MaterialTheme.typography.labelSmall,
                         color = AppTextSecondary,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         letterSpacing = 0.3.sp
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(1.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -93,7 +93,7 @@ fun CompactTopBar(
                             style = MaterialTheme.typography.titleMedium,
                             color = AppTextPrimary,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 17.sp,
+                            fontSize = 16.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)

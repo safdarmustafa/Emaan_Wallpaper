@@ -1,6 +1,8 @@
 package com.squarenova.emaanwallpapers.network
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -9,6 +11,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 object SubscriptionApi {
+
+    private const val TAG = "SubscriptionApi"
 
     private const val BASE_URL =
         "https://uxodfjjytcsrjnxwqbvg.supabase.co/functions/v1/"
@@ -45,10 +49,9 @@ object SubscriptionApi {
         }
     }
 
-    // 🔥 STEP 1 → CREATE ₹5 ORDER
+    // STEP 1 → CREATE ₹5 ORDER (500 paise)
     suspend fun createOrder(): Result<String> = withContext(Dispatchers.IO) {
         try {
-
             val request = Request.Builder()
                 .url(BASE_URL + "create-order")
                 .addHeader("Authorization", "Bearer $ANON_KEY")
@@ -58,26 +61,33 @@ object SubscriptionApi {
             val response = client.newCall(request).execute()
             val body = response.body?.string() ?: ""
 
-            val orderId = JSONObject(body).optString("order_id")
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(
+                    Exception(parseEdgeFunctionError(body).ifBlank { "createOrder failed" })
+                )
+            }
 
+            val orderId = JSONObject(body).optString("order_id")
             if (orderId.isBlank()) {
                 Result.failure(Exception("No order_id received"))
             } else {
                 Result.success(orderId)
             }
-
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    // 🔥 STEP 2 → CREATE SUBSCRIPTION
-    suspend fun createSubscription(phone: String): Result<String> =
+    /**
+     * STEP 3 — After ₹5 payment success. Persists [razorpay_payment_id] and creates Razorpay subscription.
+     */
+    suspend fun createSubscription(phone: String, razorpayPaymentId: String): Result<String> =
         withContext(Dispatchers.IO) {
             try {
 
                 val json = JSONObject().apply {
                     put("phone", phone)
+                    put("razorpay_payment_id", razorpayPaymentId)
                 }
 
                 val request = Request.Builder()
@@ -137,6 +147,55 @@ object SubscriptionApi {
                 Result.failure(e)
             }
         }
+
+    /**
+     * Retries [activateTrial] for transient races (mandate OK, Razorpay status lag).
+     * Used after mandate success and for Splash/Home recovery.
+     */
+    suspend fun activateTrialWithRetries(
+        phone: String,
+        maxAttempts: Int = 3,
+        delayMs: Long = 1500L
+    ): Result<Unit> {
+        var lastError: Exception? = null
+        for (attempt in 1..maxAttempts) {
+            Log.d(
+                TAG,
+                "activateTrialWithRetries attempt $attempt/$maxAttempts phone=$phone"
+            )
+            val r = activateTrial(phone)
+            r.fold(
+                onSuccess = {
+                    Log.i(
+                        TAG,
+                        "activateTrialWithRetries success on attempt $attempt phone=$phone"
+                    )
+                    return Result.success(Unit)
+                },
+                onFailure = { e ->
+                    lastError = e as? Exception ?: Exception(e.message)
+                    Log.w(
+                        TAG,
+                        "activateTrialWithRetries attempt $attempt failed: ${e.message}"
+                    )
+                    if (attempt < maxAttempts) {
+                        Log.d(
+                            TAG,
+                            "activateTrialWithRetries waiting ${delayMs}ms before retry"
+                        )
+                        delay(delayMs)
+                    }
+                }
+            )
+        }
+        Log.e(
+            TAG,
+            "activateTrialWithRetries failed after $maxAttempts attempts: ${lastError?.message}"
+        )
+        return Result.failure(
+            lastError ?: Exception("activateTrial failed after $maxAttempts attempts")
+        )
+    }
 
     // 🔥 STEP 3 → CANCEL SUBSCRIPTION
     suspend fun cancelSubscription(subscriptionId: String): Result<Unit> =

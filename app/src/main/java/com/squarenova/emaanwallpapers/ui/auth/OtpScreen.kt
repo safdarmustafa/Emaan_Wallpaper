@@ -179,8 +179,7 @@ fun OtpScreen(
                                         // ✅ Returning user — check subscription
                                         dataStoreManager.setProfileCompleted()
                                         if (existingUser.is_subscribed == true) {
-                                            // Already subscribed → Home
-                                            dataStoreManager.setSubscribed()
+                                            // Already subscribed → Home (server is source of truth)
                                             navController.navigate("home") {
                                                 popUpTo("login") { inclusive = true }
                                             }

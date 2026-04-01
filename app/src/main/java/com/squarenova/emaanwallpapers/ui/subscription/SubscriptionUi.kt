@@ -153,7 +153,12 @@ fun TrialCountdown(
             val d = remaining / dayMs
             val h = (remaining % dayMs) / hourMs
             val m = (remaining % hourMs) / minMs
-            text = "Trial ends in ${d}d ${h}h ${m}m"
+            text = when {
+                d >= 2L -> "$d days left in trial"
+                d == 1L -> "1 day left in trial"
+                d == 0L && h > 0 -> "${h}h ${m}m left in trial"
+                else -> "${m}m left in trial"
+            }
             color = if (remaining <= 12 * hourMs) Color(0xFFC62828) else Color(0xFF2E7D32)
         }
     }

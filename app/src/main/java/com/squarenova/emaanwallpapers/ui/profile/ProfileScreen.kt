@@ -48,6 +48,7 @@ import com.squarenova.emaanwallpapers.theme.AppTextTertiary
 import com.squarenova.emaanwallpapers.theme.BrandGreen
 import com.squarenova.emaanwallpapers.theme.BrandGreenDark
 import com.squarenova.emaanwallpapers.ui.subscription.PremiumBadge
+import com.squarenova.emaanwallpapers.ui.subscription.PremiumSubscriptionColors
 import com.squarenova.emaanwallpapers.ui.subscription.TrialCountdown
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
@@ -525,25 +526,42 @@ fun ProfileScreen(navController: NavController) {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                color = surface,
-                                border = BorderStroke(1.dp, brand.copy(alpha = 0.22f)),
-                                shadowElevation = 2.dp
+                                shape = RoundedCornerShape(20.dp),
+                                color = PremiumSubscriptionColors.SurfaceElevated,
+                                border = BorderStroke(
+                                    1.dp,
+                                    PremiumSubscriptionColors.Gold.copy(alpha = 0.35f)
+                                ),
+                                shadowElevation = 8.dp
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        .padding(horizontal = 18.dp, vertical = 16.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
                                         text = "MEMBERSHIP",
-                                        color = secondary,
+                                        color = PremiumSubscriptionColors.TextSecondary,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.8.sp
                                     )
-                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val statusLabel = when (sub) {
+                                        "trial" -> "Trial"
+                                        "cancel_requested" -> "Cancel requested"
+                                        else -> if (isSubscribed) "Active" else ""
+                                    }
+                                    if (statusLabel.isNotEmpty()) {
+                                        Text(
+                                            text = "Status · $statusLabel",
+                                            color = PremiumSubscriptionColors.TextPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                    }
                                     PremiumBadge(
                                         isSubscribed = isSubscribed,
                                         subscriptionStatus = subscriptionStatus,
@@ -606,26 +624,56 @@ fun ProfileScreen(navController: NavController) {
                 }
                 ProfileItem(
                     icon = "👑",
-                    title = if (isSubscribed) "Cancel Subscription" else "Upgrade to Premium",
-                    subtitle = if (isSubscribed)
-                        when (subscriptionStatus?.lowercase()) {
-                            "cancel_requested" -> "Your subscription will end after current period"
-                            "cancelled" -> "Your plan will end after current billing period"
-                            "trial" -> "Your subscription will not be renewed after trial"
-                            else -> "Stop future premium payments"
+                    title = run {
+                        val s = subscriptionStatus?.lowercase()
+                        val canCancel =
+                            (isSubscribed || s == "trial") && s != "cancel_requested"
+                        when {
+                            canCancel -> "Cancel Subscription"
+                            s == "cancel_requested" -> "Subscription"
+                            else -> "Upgrade to Premium"
                         }
-                    else
-                        "Unlock exclusive wallpapers",
+                    },
+                    subtitle = run {
+                        val s = subscriptionStatus?.lowercase()
+                        when (s) {
+                            "cancel_requested" ->
+                                "Cancellation recorded — access until period ends"
+                            "cancelled" -> "Your plan will end after the current billing period"
+                            "trial" ->
+                                "You can cancel before the trial ends — no ₹99 charge if you cancel in time"
+                            else -> if (isSubscribed) {
+                                "Stop future premium payments"
+                            } else {
+                                "Unlock exclusive wallpapers"
+                            }
+                        }
+                    },
                     containerColor = surface,
                     titleColor = primary,
-                    enabled = !isSubscribed || subscriptionStatus?.equals("cancel_requested", ignoreCase = true) != true
+                    enabled = run {
+                        val s = subscriptionStatus?.lowercase()
+                        val canCancel =
+                            (isSubscribed || s == "trial") && s != "cancel_requested"
+                        when (s) {
+                            "cancel_requested" -> false
+                            else -> canCancel || (!isSubscribed && s != "trial")
+                        }
+                    }
                 ) {
+                    val s = subscriptionStatus?.lowercase()
+                    val canCancel =
+                        (isSubscribed || s == "trial") && s != "cancel_requested"
                     AnalyticsManager.trackEvent(
-                        if (isSubscribed) "Profile - Cancel Subscription Tapped"
+                        if (canCancel) "Profile - Cancel Subscription Tapped"
                         else "Profile - Upgrade Premium Tapped"
                     )
-                    if (isSubscribed) {
+                    if (canCancel) {
                         showCancelDialog = true
+                    } else if (!isSubscribed && s != "trial") {
+                        navController.navigate("subscription") {
+                            launchSingleTop = true
+                        }
                     }
                 }
                 ProfileItem(

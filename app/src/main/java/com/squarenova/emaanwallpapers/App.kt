@@ -6,6 +6,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionManager
 import coil.Coil
 import coil.ImageLoader
 import coil.disk.DiskCache
@@ -16,6 +17,8 @@ import java.util.concurrent.TimeUnit
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        SubscriptionManager.init(this)
 
         AnalyticsManager.init(this, BuildConfig.MIXPANEL_TOKEN)
         AnalyticsManager.trackEvent("App Launched")
