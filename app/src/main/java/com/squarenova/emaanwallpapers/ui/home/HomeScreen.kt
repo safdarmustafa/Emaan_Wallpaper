@@ -79,11 +79,12 @@ import kotlinx.serialization.Serializable
 // ─────────────────────────────────────────
 
 @Serializable
-data class WallpaperRow(val id: Long, val category: String, val url: String)
-
-@Serializable
-data class LiveWallpaperRow(val id: Long, val url: String, val title: String? = null)
-
+data class WallpaperRow(
+    val id: Long,
+    val category: String,
+    val url: String,
+    val type: String
+)
 @Serializable
 data class UserRow(
     val id: String? = null,
@@ -168,9 +169,7 @@ fun HomeScreen(navController: NavController) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var allWallpapers by remember { mutableStateOf<List<WallpaperRow>>(emptyList()) }
-    var liveWallpapers by remember { mutableStateOf<List<LiveWallpaperRow>>(emptyList()) }
     var isWallpaperLoading by remember { mutableStateOf(true) }
-    var isLiveLoading by remember { mutableStateOf(true) }
 
     var settingWallpaperUrl by remember { mutableStateOf<String?>(null) }
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
@@ -180,7 +179,15 @@ fun HomeScreen(navController: NavController) {
     var showFilterSheet by remember { mutableStateOf(false) }
 
     // null = no category selected (show all)
-    val categories = listOf("Kaaba", "Madinah", "Quran", "Mosque", "Islamic Quotes", "Ramadan", "Allah")
+    val categories = listOf(
+        "kaaba",
+        "madinah",
+        "quran",
+        "mosque",
+        "islamic_quotes",
+        "ramadan",
+        "allah"
+    )
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     var redirectedToSubscription by remember { mutableStateOf(false) }
@@ -244,8 +251,17 @@ fun HomeScreen(navController: NavController) {
     }
 
     val filteredStatic = remember(selectedCategory, allWallpapers) {
-        if (selectedCategory == null) allWallpapers
-        else allWallpapers.filter { it.category == selectedCategory }
+        allWallpapers.filter {
+            it.type == "static" &&
+                    (selectedCategory == null || it.category == selectedCategory)
+        }
+    }
+
+    val filteredLive = remember(selectedCategory, allWallpapers) {
+        allWallpapers.filter {
+            it.type == "live" &&
+                    (selectedCategory == null || it.category == selectedCategory)
+        }
     }
 
     LaunchedEffect(snackbarMessage) {
@@ -345,23 +361,11 @@ fun HomeScreen(navController: NavController) {
         try {
             allWallpapers = SupabaseClient.client
                 .postgrest["wallpapers"]
-                .select(columns = Columns.list("id", "category", "url"))
-                .decodeList()
+                .select(columns = Columns.list("id", "category", "url", "type"))
+                .decodeList<WallpaperRow>()
         } catch (e: Exception) {
             Log.e("WALLPAPER_ERROR", e.message ?: "Unknown")
         } finally { isWallpaperLoading = false }
-    }
-
-    LaunchedEffect(Unit) {
-        isLiveLoading = true
-        try {
-            liveWallpapers = SupabaseClient.client
-                .postgrest["live_wallpapers"]
-                .select(columns = Columns.list("id", "url", "title"))
-                .decodeList()
-        } catch (e: Exception) {
-            Log.e("LIVE_WALLPAPER_ERROR", e.message ?: "Unknown")
-        } finally { isLiveLoading = false }
     }
 
     val homeBg = HomeBackground
@@ -550,22 +554,35 @@ fun HomeScreen(navController: NavController) {
                 contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp)
             ) {
 
-                // Live wallpapers — only show when no category is selected
-                if ((activeFilter == WallpaperFilter.ALL && selectedCategory == null) || activeFilter == WallpaperFilter.LIVE) {
-                    if (isLiveLoading) {
+                // Live wallpapers (same table as static; filtered by type)
+                if (activeFilter == WallpaperFilter.ALL || activeFilter == WallpaperFilter.LIVE) {
+                    if (isWallpaperLoading) {
                         items(2) { ShimmerCard(cardHeight) }
-                    } else {
-                        items(items = liveWallpapers, key = { "live_${it.id}" }) { liveWallpaper ->
+                    } else if (filteredLive.isNotEmpty()) {
+                        items(items = filteredLive, key = { "live_${it.id}" }) { wallpaper ->
                             LiveWallpaperCard(
-                                videoUrl = liveWallpaper.url,
-                                title = liveWallpaper.title,
+                                videoUrl = wallpaper.url,
+                                title = null,
                                 cardHeight = cardHeight,
                                 onSetLiveWallpaper = {
-                                    setLiveWallpaper(context, liveWallpaper.url)
+                                    setLiveWallpaper(context, wallpaper.url)
                                     snackbarIsSuccess = true
                                     snackbarMessage = "Opening live wallpaper picker ✅"
                                 }
                             )
+                        }
+                    } else if (activeFilter == WallpaperFilter.LIVE) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "No live wallpapers in this view",
+                                    color = AppTextSecondary,
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     }
                 }
