@@ -1,7 +1,10 @@
 package com.squarenova.emaanwallpapers.network
 
+import com.squarenova.emaanwallpapers.BuildConfig
+
 object Fast2SmsConfig {
-    const val API_KEY = "ORpjvHODik7CkXyJea7e8LNuyavXDVf5MJwGxptYJZQQyH2q75xLu6Xiv6fp"
+    /** Set FAST2SMS_API_KEY in local.properties — never commit real keys. */
+    val API_KEY: String get() = BuildConfig.FAST2SMS_API_KEY.trim()
 
     // ✅ DLT Registration Details (required by TRAI for India)
     const val DLT_SENDER_ID = "SPCTEK"

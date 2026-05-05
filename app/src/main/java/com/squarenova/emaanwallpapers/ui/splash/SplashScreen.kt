@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
@@ -80,15 +81,26 @@ fun SplashScreen(navController: NavController) {
                 }
                 AnalyticsManager.identify(phone)
 
-                val row = try {
-                    SupabaseClient.client
-                        .postgrest["users"]
-                        .select { filter { eq("phone_number", phone) } }
-                        .decodeList<SubscriptionUserRow>()
-                        .firstOrNull()
-                } catch (e: Exception) {
-                    Log.e("SplashScreen", "users fetch", e)
-                    null
+                val subscriptionSyncManager = UserSubscriptionSyncManager(dataStoreManager)
+                val syncedSubscribed = subscriptionSyncManager.syncUserSubscription(phone)
+                Log.d(
+                    "SplashScreen",
+                    "App-start subscription sync: phone=$phone, subscribed=$syncedSubscribed"
+                )
+
+                val row = if (syncedSubscribed) {
+                    SubscriptionUserRow(phone_number = phone, is_subscribed = true)
+                } else {
+                    try {
+                        SupabaseClient.client
+                            .postgrest["users"]
+                            .select { filter { eq("phone_number", phone) } }
+                            .decodeList<SubscriptionUserRow>()
+                            .firstOrNull()
+                    } catch (e: Exception) {
+                        Log.e("SplashScreen", "users fetch", e)
+                        null
+                    }
                 }
 
                 when {

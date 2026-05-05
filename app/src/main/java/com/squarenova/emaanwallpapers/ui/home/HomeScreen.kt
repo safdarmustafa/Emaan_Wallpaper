@@ -62,7 +62,12 @@ import com.squarenova.emaanwallpapers.theme.HomeFilterIconIdle
 import com.squarenova.emaanwallpapers.theme.HomeSurfaceStrip
 import com.squarenova.emaanwallpapers.ui.components.CompactTopBar
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.network.SubscriptionApi
+import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
+import com.squarenova.emaanwallpapers.network.WallpaperCatalog
+import com.squarenova.emaanwallpapers.network.WallpaperRow
+import com.squarenova.emaanwallpapers.network.isLiveWallpaper
+import com.squarenova.emaanwallpapers.network.isStaticWallpaper
+import com.squarenova.emaanwallpapers.network.matchesCategory
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.service.GifWallpaperService
 import io.github.jan.supabase.postgrest.postgrest
@@ -78,13 +83,6 @@ import kotlinx.serialization.Serializable
 // Models
 // ─────────────────────────────────────────
 
-@Serializable
-data class WallpaperRow(
-    val id: Long,
-    val category: String,
-    val url: String,
-    val type: String
-)
 @Serializable
 data class UserRow(
     val id: String? = null,
@@ -186,7 +184,8 @@ fun HomeScreen(navController: NavController) {
         "mosque",
         "islamic_quotes",
         "ramadan",
-        "allah"
+        "allah",
+        "general"
     )
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
@@ -251,17 +250,11 @@ fun HomeScreen(navController: NavController) {
     }
 
     val filteredStatic = remember(selectedCategory, allWallpapers) {
-        allWallpapers.filter {
-            it.type == "static" &&
-                    (selectedCategory == null || it.category == selectedCategory)
-        }
+        allWallpapers.filter { it.isStaticWallpaper() && it.matchesCategory(selectedCategory) }
     }
 
     val filteredLive = remember(selectedCategory, allWallpapers) {
-        allWallpapers.filter {
-            it.type == "live" &&
-                    (selectedCategory == null || it.category == selectedCategory)
-        }
+        allWallpapers.filter { it.isLiveWallpaper() && it.matchesCategory(selectedCategory) }
     }
 
     LaunchedEffect(snackbarMessage) {
@@ -275,7 +268,12 @@ fun HomeScreen(navController: NavController) {
         try {
             val phone = dataStoreManager.phoneNumber.firstOrNull()
             if (!phone.isNullOrEmpty()) {
-                SubscriptionApi.refreshSubscriptionStatus(phone)
+                val isSubscribed = UserSubscriptionSyncManager(dataStoreManager)
+                    .syncUserSubscription(phone)
+                Log.d(
+                    "HOME_SUB_SYNC",
+                    "Initial home sync: phone=$phone, subscribed=$isSubscribed"
+                )
                 val result = SupabaseClient.client
                     .postgrest["users"]
                     .select(
@@ -326,7 +324,12 @@ fun HomeScreen(navController: NavController) {
                     try {
                         val phone = dataStoreManager.phoneNumber.firstOrNull()
                         if (!phone.isNullOrEmpty()) {
-                            SubscriptionApi.refreshSubscriptionStatus(phone)
+                            val isSubscribed = UserSubscriptionSyncManager(dataStoreManager)
+                                .syncUserSubscription(phone)
+                            Log.d(
+                                "HOME_SUB_SYNC",
+                                "Resume home sync: phone=$phone, subscribed=$isSubscribed"
+                            )
                             val result = SupabaseClient.client
                                 .postgrest["users"]
                                 .select(
@@ -359,13 +362,22 @@ fun HomeScreen(navController: NavController) {
     LaunchedEffect(Unit) {
         isWallpaperLoading = true
         try {
-            allWallpapers = SupabaseClient.client
-                .postgrest["wallpapers"]
-                .select(columns = Columns.list("id", "category", "url", "type"))
-                .decodeList<WallpaperRow>()
+            val rows = WallpaperCatalog.fetchAll()
+            allWallpapers = rows
+            val types = rows.map { it.type }.distinct()
+            Log.d("HOME_WALLPAPERS", "fetched count=${rows.size} distinct types=$types")
+            val anyShown = rows.any { it.isStaticWallpaper() || it.isLiveWallpaper() }
+            if (rows.isNotEmpty() && !anyShown) {
+                Log.w(
+                    "HOME_WALLPAPERS",
+                    "Parsed rows but none match static/live filters — check wallpapers.type column"
+                )
+            }
         } catch (e: Exception) {
-            Log.e("WALLPAPER_ERROR", e.message ?: "Unknown")
-        } finally { isWallpaperLoading = false }
+            Log.e("HOME_WALLPAPER_ERROR", "unexpected wallpaper load error", e)
+        } finally {
+            isWallpaperLoading = false
+        }
     }
 
     val homeBg = HomeBackground

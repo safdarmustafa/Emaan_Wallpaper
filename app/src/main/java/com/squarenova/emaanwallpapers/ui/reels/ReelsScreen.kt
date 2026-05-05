@@ -172,6 +172,9 @@ fun ReelsScreen() {
                 .postgrest["reels"]
                 .select(columns = Columns.ALL)
                 .decodeList()
+
+            Log.d("REELS_DEBUG", "Fetched reels count: ${reels.size}")
+
         } catch (e: Exception) {
             Log.e("REELS_ERROR", e.message ?: "Unknown")
         } finally {

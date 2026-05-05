@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -27,8 +29,25 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Replace with your Mixpanel Project Token from https://mixpanel.com/settings/project
-        buildConfigField("String", "MIXPANEL_TOKEN", "\"${project.findProperty("MIXPANEL_TOKEN") ?: "05b8284523c8db2146e3afff2585c9be"}\"")
+        val localProps = Properties()
+        rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use {
+            localProps.load(it)
+        }
+        fun prop(name: String): String {
+            val fromLocal = localProps.getProperty(name)?.trim().orEmpty()
+            if (fromLocal.isNotEmpty()) return fromLocal
+            return (project.findProperty(name) as String?)?.trim().orEmpty()
+        }
+
+        fun String.escapeForBuildConfig(): String =
+            replace("\\", "\\\\").replace("\"", "\\\"")
+
+        // Secrets: define in local.properties (gitignored). See local.properties.example at repo root.
+        buildConfigField("String", "SUPABASE_URL", "\"${prop("SUPABASE_URL").escapeForBuildConfig()}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${prop("SUPABASE_ANON_KEY").escapeForBuildConfig()}\"")
+        buildConfigField("String", "RAZORPAY_KEY_ID", "\"${prop("RAZORPAY_KEY_ID").escapeForBuildConfig()}\"")
+        buildConfigField("String", "FAST2SMS_API_KEY", "\"${prop("FAST2SMS_API_KEY").escapeForBuildConfig()}\"")
+        buildConfigField("String", "MIXPANEL_TOKEN", "\"${prop("MIXPANEL_TOKEN").escapeForBuildConfig()}\"")
     }
 
     buildTypes {

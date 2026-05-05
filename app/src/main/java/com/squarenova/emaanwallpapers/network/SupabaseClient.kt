@@ -1,16 +1,25 @@
 package com.squarenova.emaanwallpapers.network
 
+import android.util.Log
+import com.squarenova.emaanwallpapers.BuildConfig
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.storage.Storage
 
 object SupabaseClient {
 
-    val client = createSupabaseClient(
-        supabaseUrl = "https://uxodfjjytcsrjnxwqbvg.supabase.co",
-        supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4b2Rmamp5dGNzcmpueHdxYnZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2OTgzMjEsImV4cCI6MjA4OTI3NDMyMX0.i3BlgJkG9iq0-vgTs9cZ9ndDSVH7T3TH8uEhbdIOWW0"
-    ) {
-        install(Postgrest)
-        install(Storage)
+    private const val TAG = "SUPABASE_CLIENT"
+
+    val client by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val url = BuildConfig.SUPABASE_URL.trim()
+        val key = BuildConfig.SUPABASE_ANON_KEY.trim()
+        require(url.isNotEmpty() && key.isNotEmpty()) {
+            "Missing SUPABASE_URL or SUPABASE_ANON_KEY — add them to local.properties (see local.properties.example)."
+        }
+        Log.d(TAG, "createSupabaseClient urlHost=${java.net.URI(url).host}")
+        createSupabaseClient(supabaseUrl = url, supabaseKey = key) {
+            install(Postgrest)
+            install(Storage)
+        }
     }
 }

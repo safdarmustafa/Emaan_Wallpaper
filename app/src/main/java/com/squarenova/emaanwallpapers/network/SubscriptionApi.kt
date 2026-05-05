@@ -1,6 +1,7 @@
 package com.squarenova.emaanwallpapers.network
 
 import android.util.Log
+import com.squarenova.emaanwallpapers.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -13,12 +14,17 @@ import org.json.JSONObject
 object SubscriptionApi {
     private const val TAG = "SubscriptionApi"
 
-    private const val BASE_URL =
-        "https://uxodfjjytcsrjnxwqbvg.supabase.co/functions/v1/"
+    private fun functionsBaseUrl(): String {
+        val base = BuildConfig.SUPABASE_URL.trimEnd('/')
+        require(base.isNotEmpty()) { "SUPABASE_URL missing (local.properties)." }
+        return "$base/functions/v1/"
+    }
 
-    // ✅ FULL ANON KEY (PASTE YOUR COMPLETE KEY HERE)
-    private const val ANON_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4b2Rmamp5dGNzcmpueHdxYnZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2OTgzMjEsImV4cCI6MjA4OTI3NDMyMX0.i3BlgJkG9iq0-vgTs9cZ9ndDSVH7T3TH8uEhbdIOWW0"
+    private fun anonBearer(): String {
+        val key = BuildConfig.SUPABASE_ANON_KEY.trim()
+        require(key.isNotEmpty()) { "SUPABASE_ANON_KEY missing (local.properties)." }
+        return "Bearer $key"
+    }
 
     private val JSON = "application/json".toMediaType()
 
@@ -58,8 +64,8 @@ object SubscriptionApi {
     suspend fun createOrder(): Result<String> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
-                .url(BASE_URL + "create-order")
-                .addHeader("Authorization", "Bearer $ANON_KEY")
+                .url(functionsBaseUrl() + "create-order")
+                .addHeader("Authorization", anonBearer())
                 .post("{}".toRequestBody(JSON))
                 .build()
 
@@ -93,8 +99,8 @@ object SubscriptionApi {
                 }
 
                 val request = Request.Builder()
-                    .url(BASE_URL + "verify-payment")
-                    .addHeader("Authorization", "Bearer $ANON_KEY")
+                    .url(functionsBaseUrl() + "verify-payment")
+                    .addHeader("Authorization", anonBearer())
                     .addHeader("Content-Type", "application/json")
                     .post(json.toString().toRequestBody(JSON))
                     .build()
@@ -121,8 +127,8 @@ object SubscriptionApi {
                 }
 
                 val request = Request.Builder()
-                    .url(BASE_URL + "start-trial")
-                    .addHeader("Authorization", "Bearer $ANON_KEY")
+                    .url(functionsBaseUrl() + "start-trial")
+                    .addHeader("Authorization", anonBearer())
                     .addHeader("Content-Type", "application/json")
                     .post(json.toString().toRequestBody(JSON))
                     .build()
@@ -148,9 +154,9 @@ object SubscriptionApi {
                 put("phone", phone)
             }
 
-            val request = Request.Builder()
-                .url(BASE_URL + "create-subscription")
-                .addHeader("Authorization", "Bearer $ANON_KEY")
+                val request = Request.Builder()
+                    .url(functionsBaseUrl() + "create-subscription")
+                    .addHeader("Authorization", anonBearer())
                 .addHeader("Content-Type", "application/json")
                 .post(json.toString().toRequestBody(JSON))
                 .build()
@@ -179,8 +185,8 @@ object SubscriptionApi {
         try {
             val json = JSONObject().apply { put("subscription_id", subscriptionId) }
             val request = Request.Builder()
-                .url(BASE_URL + "validate-subscription-status")
-                .addHeader("Authorization", "Bearer $ANON_KEY")
+                .url(functionsBaseUrl() + "validate-subscription-status")
+                .addHeader("Authorization", anonBearer())
                 .addHeader("Content-Type", "application/json")
                 .post(json.toString().toRequestBody(JSON))
                 .build()
@@ -240,8 +246,8 @@ object SubscriptionApi {
         try {
             val json = JSONObject().apply { put("phone", phone) }
             val request = Request.Builder()
-                .url(BASE_URL + "validate-subscription-status")
-                .addHeader("Authorization", "Bearer $ANON_KEY")
+                .url(functionsBaseUrl() + "validate-subscription-status")
+                .addHeader("Authorization", anonBearer())
                 .addHeader("Content-Type", "application/json")
                 .post(json.toString().toRequestBody(JSON))
                 .build()
@@ -288,8 +294,8 @@ object SubscriptionApi {
                 }
 
                 val request = Request.Builder()
-                    .url(BASE_URL + "cancel-subscription")
-                    .addHeader("Authorization", "Bearer $ANON_KEY")
+                    .url(functionsBaseUrl() + "cancel-subscription")
+                    .addHeader("Authorization", anonBearer())
                     .addHeader("Content-Type", "application/json")
                     .post(json.toString().toRequestBody(JSON))
                     .build()

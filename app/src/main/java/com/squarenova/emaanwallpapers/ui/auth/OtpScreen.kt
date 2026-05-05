@@ -22,6 +22,7 @@ import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.network.Fast2SmsConfig
 import com.squarenova.emaanwallpapers.network.RetrofitClient
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -180,7 +181,15 @@ fun OtpScreen(
                                     if (existingUser != null && !existingUser.first_name.isNullOrEmpty()) {
                                         // ✅ Returning user — check subscription
                                         dataStoreManager.setProfileCompleted()
-                                        if (existingUser.is_subscribed == true) {
+                                        val subscriptionSyncManager =
+                                            UserSubscriptionSyncManager(dataStoreManager)
+                                        val isSubscribed =
+                                            subscriptionSyncManager.syncUserSubscription(phone)
+                                        Log.d(
+                                            "OTP_SCREEN",
+                                            "Post-login subscription sync: phone=$phone, subscribed=$isSubscribed"
+                                        )
+                                        if (isSubscribed) {
                                             // Already subscribed → Home (server is source of truth)
                                             navController.navigate("home") {
                                                 popUpTo("login") { inclusive = true }

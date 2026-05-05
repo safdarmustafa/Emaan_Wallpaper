@@ -60,12 +60,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import android.util.Log
+import com.squarenova.emaanwallpapers.BuildConfig
 import io.github.jan.supabase.postgrest.postgrest
 import org.json.JSONObject
 import kotlinx.serialization.Serializable
 
 object RazorpayConfig {
-    const val KEY_ID = "rzp_live_SUkaGbslh0IvIZ"
+    /** Set RAZORPAY_KEY_ID in local.properties (use test keys for debug builds if you split by flavor later). */
+    val KEY_ID: String get() = BuildConfig.RAZORPAY_KEY_ID.trim()
 }
 
 @Serializable
