@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">Emaan Wallpapers</string>
+    <string name="facebook_app_id">2047175655901174</string>
+
+    <string name="facebook_client_token">6f9519e0d99a43a1b7c9fb87cbb22c6b</string>
 </resources>

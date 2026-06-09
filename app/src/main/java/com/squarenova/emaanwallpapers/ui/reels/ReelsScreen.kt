@@ -54,6 +54,7 @@ import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -170,7 +171,9 @@ fun ReelsScreen() {
         try {
             reels = SupabaseClient.client
                 .postgrest["reels"]
-                .select(columns = Columns.ALL)
+                .select(columns = Columns.ALL) {
+                    order("created_at", Order.DESCENDING)
+                }
                 .decodeList()
 
             Log.d("REELS_DEBUG", "Fetched reels count: ${reels.size}")

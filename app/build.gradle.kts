@@ -121,7 +121,8 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.10.0")
-
+    // facebook sdk or meta sdk dependency
+    implementation("com.facebook.android:facebook-android-sdk:latest.release")
     // 🎨 Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

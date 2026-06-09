@@ -2,10 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Internet access -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Network state -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Wallpaper permissions -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+
+    <!-- Legacy storage support for older Android versions -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
     <application
@@ -21,57 +29,102 @@
         android:usesCleartextTraffic="true"
         tools:replace="android:theme">
 
-        <!-- Mixpanel debug: set to false for release -->
+        <!-- ========================= -->
+        <!-- Meta / Facebook SDK -->
+        <!-- ========================= -->
+
+        <!-- Meta App ID -->
+        <meta-data
+            android:name="com.facebook.sdk.ApplicationId"
+            android:value="@string/facebook_app_id" />
+
+        <!-- Meta Client Token -->
+        <meta-data
+            android:name="com.facebook.sdk.ClientToken"
+            android:value="@string/facebook_client_token" />
+
+        <!-- ========================= -->
+        <!-- Mixpanel -->
+        <!-- ========================= -->
+
+        <!-- Enable Mixpanel debug logs -->
+        <!-- Set to false in production release -->
         <meta-data
             android:name="com.mixpanel.android.MPConfig.EnableDebugLogging"
             android:value="true" />
 
-        <!-- singleTop: returning from UPI / Razorpay should reuse the same activity (payment listener + state). -->
+        <!-- ========================= -->
+        <!-- Main Activity -->
+        <!-- ========================= -->
+
+        <!-- singleTop ensures Razorpay/UPI returns to same activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/Theme.EmaanWallpapers">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
         </activity>
 
-        <!-- Razorpay: standard-core AAR already declares CheckoutActivity (exported=false). Only override theme. -->
+        <!-- ========================= -->
+        <!-- Razorpay -->
+        <!-- ========================= -->
+
+        <!-- Razorpay checkout activity -->
         <activity
             android:name="com.razorpay.CheckoutActivity"
             android:theme="@style/Theme.RazorpayCheckout"
             tools:replace="android:theme" />
 
-        <!-- ✅ Live Wallpaper Service -->
+        <!-- ========================= -->
+        <!-- Live Wallpaper Service -->
+        <!-- ========================= -->
+
         <service
             android:name=".service.GifWallpaperService"
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.BIND_WALLPAPER">
+
             <intent-filter>
                 <action android:name="android.service.wallpaper.WallpaperService" />
             </intent-filter>
+
             <meta-data
                 android:name="android.service.wallpaper"
                 android:resource="@xml/wallpaper_info" />
+
         </service>
 
-        <!-- ✅ Wallpaper Preview Activity -->
+        <!-- ========================= -->
+        <!-- Wallpaper Preview -->
+        <!-- ========================= -->
+
         <activity
             android:name=".ui.wallpaper.WallpaperPreviewActivity"
             android:exported="true" />
 
-        <!-- FileProvider for sharing videos -->
+        <!-- ========================= -->
+        <!-- File Provider -->
+        <!-- ========================= -->
+
+        <!-- Used for sharing videos/files securely -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.file_provider"
             android:exported="false"
             android:grantUriPermissions="true">
+
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
+
         </provider>
 
     </application>

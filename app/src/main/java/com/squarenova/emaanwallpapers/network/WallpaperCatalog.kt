@@ -3,6 +3,7 @@ package com.squarenova.emaanwallpapers.network
 import android.util.Log
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -45,7 +46,9 @@ object WallpaperCatalog {
 
     suspend fun fetchAll(): List<WallpaperRow> {
         val result = try {
-            SupabaseClient.client.postgrest["wallpapers"].select(columns = Columns.ALL)
+            SupabaseClient.client.postgrest["wallpapers"].select(columns = Columns.ALL) {
+                order("created_at", Order.DESCENDING)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "wallpapers select failed (table missing, RLS, network, or bad URL?)", e)
             return emptyList()
