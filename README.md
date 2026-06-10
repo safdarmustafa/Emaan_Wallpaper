@@ -1,1 +1,1 @@
-a islamic wallpaper app on jetpack compose
+A islamic wallpaper app on jetpack compose
