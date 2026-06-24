@@ -33,6 +33,7 @@ import coil.request.ImageRequest
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
 import com.squarenova.emaanwallpapers.theme.AppTextSecondary
 import com.squarenova.emaanwallpapers.theme.HomeTopBarSurface
+import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.ui.subscription.PremiumBadge
 
 @Composable
@@ -44,13 +45,16 @@ fun CompactTopBar(
     avatarInitial: String,
     isSubscribed: Boolean,
     subscriptionStatus: String?,
+    trialEndIso: String? = null,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val showBadge =
-        isSubscribed || subscriptionStatus?.equals("trial", ignoreCase = true) == true ||
-            subscriptionStatus?.equals("cancel_requested", ignoreCase = true) == true
+    val showBadge = SubscriptionEntitlement.hasPremiumAccess(
+        subscriptionStatus = subscriptionStatus,
+        trialEndIso = trialEndIso,
+        isSubscribedLegacy = isSubscribed,
+    )
 
     Surface(
         modifier = modifier.fillMaxWidth(),

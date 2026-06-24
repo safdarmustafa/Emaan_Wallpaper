@@ -17,24 +17,31 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import android.util.Log
+import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
+import com.squarenova.emaanwallpapers.data.MandateDebugLog
+import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.Serializable
 
+private val MANDATE_PENDING_STATUSES = setOf("created", "authenticated", "pending")
+
 @Serializable
 private data class SubscriptionUserRow(
     val phone_number: String? = null,
     val is_subscribed: Boolean? = false,
     val razorpay_subscription_id: String? = null,
-    val subscription_status: String? = null
+    val subscription_status: String? = null,
+    val trial_end: String? = null,
 )
 
 @Composable
@@ -46,101 +53,205 @@ fun SplashScreen(navController: NavController) {
     val alphaAnim = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
+        try {
+            alphaAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(1200)
+            )
 
-        alphaAnim.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(1200)
-        )
+            delay(1200)
 
-        delay(1200)
+            val loggedIn = dataStoreManager.isLoggedIn.first()
+            val profileCompleted = dataStoreManager.isProfileCompleted.first()
 
-        val loggedIn = dataStoreManager.isLoggedIn.first()
-        val profileCompleted = dataStoreManager.isProfileCompleted.first()
-
-        when {
-            !loggedIn -> {
-                navController.navigate("login") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            }
-
-            loggedIn && !profileCompleted -> {
-                navController.navigate("profile_setup") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            }
-
-            else -> {
-                val phone = dataStoreManager.phoneNumber.firstOrNull()
-
-                if (phone.isNullOrBlank()) {
+            when {
+                !loggedIn -> {
                     navController.navigate("login") {
                         popUpTo("splash") { inclusive = true }
                     }
                     return@LaunchedEffect
                 }
-                AnalyticsManager.identify(phone)
 
-                val subscriptionSyncManager = UserSubscriptionSyncManager(dataStoreManager)
-                val syncedSubscribed = subscriptionSyncManager.syncUserSubscription(phone)
-                Log.d(
-                    "SplashScreen",
-                    "App-start subscription sync: phone=$phone, subscribed=$syncedSubscribed"
-                )
+                loggedIn && !profileCompleted -> {
+                    navController.navigate("profile_setup") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                    return@LaunchedEffect
+                }
 
-                val row = if (syncedSubscribed) {
-                    SubscriptionUserRow(phone_number = phone, is_subscribed = true)
-                } else {
-                    try {
+                else -> {
+                    val phone = dataStoreManager.phoneNumber.firstOrNull()
+
+                    if (phone.isNullOrBlank()) {
+                        navController.navigate("login") {
+                            popUpTo("splash") { inclusive = true }
+                        }
+                        return@LaunchedEffect
+                    }
+
+                    AnalyticsManager.identify(phone)
+
+                    val cachedSubscribed = try {
+                        dataStoreManager.isSubscribed.first()
+                    } catch (_: Exception) {
+                        false
+                    }
+
+                    val subscriptionSyncManager = UserSubscriptionSyncManager(dataStoreManager)
+                    val syncedSubscribed = subscriptionSyncManager.syncUserSubscription(phone)
+                    if (BuildConfig.DEBUG) {
+                        Log.d(
+                            "SplashScreen",
+                            "App-start subscription sync: subscribed=$syncedSubscribed cached=$cachedSubscribed"
+                        )
+                    }
+
+                    val row = try {
                         SupabaseClient.client
                             .postgrest["users"]
                             .select { filter { eq("phone_number", phone) } }
                             .decodeList<SubscriptionUserRow>()
                             .firstOrNull()
                     } catch (e: Exception) {
-                        Log.e("SplashScreen", "users fetch", e)
+                        if (BuildConfig.DEBUG) {
+                            Log.e("SplashScreen", "users fetch failed", e)
+                        }
                         null
                     }
-                }
 
-                when {
-                    row?.is_subscribed == true -> {
-                        navController.navigate("home") {
-                            popUpTo("splash") { inclusive = true }
-                        }
-                    }
-                    !row?.razorpay_subscription_id.isNullOrBlank() -> {
-                        SubscriptionApi.refreshSubscriptionStatus(phone)
-                        val refreshed = try {
-                            SupabaseClient.client
-                                .postgrest["users"]
-                                .select { filter { eq("phone_number", phone) } }
-                                .decodeList<SubscriptionUserRow>()
-                                .firstOrNull()
-                        } catch (_: Exception) {
-                            row
-                        }
-                        if (refreshed?.is_subscribed == true) {
+                    val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
+                        subscriptionStatus = row?.subscription_status,
+                        trialEndIso = row?.trial_end,
+                    ) || syncedSubscribed
+
+                    MandateDebugLog.entitlementCheck(
+                        source = "SplashScreen:routing",
+                        subscriptionStatus = row?.subscription_status,
+                        trialPaid = null,
+                        trialEnd = row?.trial_end,
+                        hasPremiumAccess = hasPremium,
+                    )
+                    MandateDebugLog.note("SplashScreen syncedSubscribed=$syncedSubscribed")
+
+                    when {
+                        hasPremium -> {
+                            EntitlementDebugLog.navigation(
+                                source = "SplashScreen",
+                                destination = "home",
+                                subscriptionStatus = row?.subscription_status,
+                                trialEnd = row?.trial_end,
+                                hasPremiumAccess = true,
+                            )
                             navController.navigate("home") {
                                 popUpTo("splash") { inclusive = true }
                             }
-                        } else {
-                            val reason = when (refreshed?.subscription_status?.lowercase()) {
-                                "expired" -> "expired"
-                                else -> "not_subscribed"
+                        }
+                        !row?.razorpay_subscription_id.isNullOrBlank() &&
+                            row?.subscription_status?.trim()?.lowercase() in MANDATE_PENDING_STATUSES -> {
+                            val refreshOk = SubscriptionApi.refreshSubscriptionStatus(phone).isSuccess
+                            val refreshed = if (refreshOk) {
+                                try {
+                                    SupabaseClient.client
+                                        .postgrest["users"]
+                                        .select { filter { eq("phone_number", phone) } }
+                                        .decodeList<SubscriptionUserRow>()
+                                        .firstOrNull()
+                                } catch (_: Exception) {
+                                    row
+                                }
+                            } else {
+                                row
                             }
-                            AnalyticsManager.track("paywall_shown", mapOf("reason" to reason))
-                            navController.navigate("subscription") {
-                                popUpTo("splash") { inclusive = true }
+                            if (SubscriptionEntitlement.hasPremiumAccess(
+                                    refreshed?.subscription_status,
+                                    refreshed?.trial_end,
+                                )
+                            ) {
+                                EntitlementDebugLog.navigation(
+                                    source = "SplashScreen:mandate_refresh",
+                                    destination = "home",
+                                    subscriptionStatus = refreshed?.subscription_status,
+                                    trialEnd = refreshed?.trial_end,
+                                    hasPremiumAccess = true,
+                                )
+                                navController.navigate("home") {
+                                    popUpTo("splash") { inclusive = true }
+                                }
+                            } else if (refreshed == null && syncedSubscribed) {
+                                EntitlementDebugLog.navigation(
+                                    source = "SplashScreen:sync_fallback",
+                                    destination = "home",
+                                    subscriptionStatus = null,
+                                    trialEnd = null,
+                                    hasPremiumAccess = true,
+                                )
+                                navController.navigate("home") {
+                                    popUpTo("splash") { inclusive = true }
+                                }
+                            } else {
+                                val reason = when (refreshed?.subscription_status?.lowercase()) {
+                                    "expired" -> "expired"
+                                    else -> "not_subscribed"
+                                }
+                                AnalyticsManager.track("paywall_shown", mapOf("reason" to reason))
+                                EntitlementDebugLog.navigation(
+                                    source = "SplashScreen:mandate_refresh",
+                                    destination = "subscription",
+                                    subscriptionStatus = refreshed?.subscription_status,
+                                    trialEnd = refreshed?.trial_end,
+                                    hasPremiumAccess = false,
+                                )
+                                navController.navigate("subscription") {
+                                    popUpTo("splash") { inclusive = true }
+                                }
+                            }
+                        }
+                        else -> {
+                            if (syncedSubscribed && row == null) {
+                                EntitlementDebugLog.navigation(
+                                    source = "SplashScreen:offline_sync",
+                                    destination = "home",
+                                    subscriptionStatus = null,
+                                    trialEnd = null,
+                                    hasPremiumAccess = true,
+                                )
+                                navController.navigate("home") {
+                                    popUpTo("splash") { inclusive = true }
+                                }
+                            } else {
+                                AnalyticsManager.track("paywall_shown", mapOf("reason" to "not_subscribed"))
+                                EntitlementDebugLog.navigation(
+                                    source = "SplashScreen:default",
+                                    destination = "subscription",
+                                    subscriptionStatus = row?.subscription_status,
+                                    trialEnd = row?.trial_end,
+                                    hasPremiumAccess = false,
+                                )
+                                navController.navigate("subscription") {
+                                    popUpTo("splash") { inclusive = true }
+                                }
                             }
                         }
                     }
-                    else -> {
-                        AnalyticsManager.track("paywall_shown", mapOf("reason" to "not_subscribed"))
-                        navController.navigate("subscription") {
-                            popUpTo("splash") { inclusive = true }
-                        }
-                    }
+                }
+            }
+        } catch (e: Exception) {
+            if (BuildConfig.DEBUG) {
+                Log.e("SplashScreen", "startup routing failed", e)
+            }
+            val fallbackLoggedIn = try {
+                dataStoreManager.isLoggedIn.first() &&
+                    dataStoreManager.isProfileCompleted.first()
+            } catch (_: Exception) {
+                false
+            }
+            if (fallbackLoggedIn) {
+                navController.navigate("subscription") {
+                    popUpTo("splash") { inclusive = true }
+                }
+            } else {
+                navController.navigate("login") {
+                    popUpTo("splash") { inclusive = true }
                 }
             }
         }

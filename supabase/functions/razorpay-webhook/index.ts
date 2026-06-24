@@ -77,11 +77,6 @@ serve(async (req) => {
 
     console.log("razorpay-webhook event:", eventName);
 
-    // Do NOT grant premium on mandate created — app activates trial after mandate success
-    if (eventName === "subscription.activated") {
-      return new Response("OK", { status: 200 });
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceKey) {
@@ -94,6 +89,31 @@ serve(async (req) => {
 
     if (!subId) {
       console.log("razorpay-webhook: no subscription id in payload (ignored)");
+      return new Response("OK", { status: 200 });
+    }
+
+    if (eventName === "subscription.authenticated") {
+      await supabase
+        .from("users")
+        .update({
+          is_subscribed: false,
+          subscription_status: "authenticated",
+        })
+        .eq("razorpay_subscription_id", subId);
+      return new Response("OK", { status: 200 });
+    }
+
+    if (eventName === "subscription.activated") {
+      const periodEnd =
+        current_end != null
+          ? new Date(current_end * 1000).toISOString()
+          : null;
+      const row: Record<string, unknown> = {
+        is_subscribed: true,
+        subscription_status: "active",
+      };
+      if (periodEnd) row.current_period_end = periodEnd;
+      await supabase.from("users").update(row).eq("razorpay_subscription_id", subId);
       return new Response("OK", { status: 200 });
     }
 

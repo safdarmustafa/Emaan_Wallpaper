@@ -48,7 +48,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -56,6 +59,7 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -150,8 +154,9 @@ suspend fun shareVideoToWhatsApp(context: Context, url: String, title: String?):
 
 @OptIn(UnstableApi::class)
 @Composable
-fun ReelsScreen() {
+fun ReelsScreen(navController: NavController) {
     val context = LocalContext.current
+    val dataStoreManager = remember { DataStoreManager(context) }
     val scope = rememberCoroutineScope()
 
     var reels by remember { mutableStateOf<List<ReelRow>>(emptyList()) }
@@ -167,6 +172,23 @@ fun ReelsScreen() {
     }
 
     LaunchedEffect(Unit) {
+        val phone = dataStoreManager.phoneNumber.firstOrNull()
+        if (phone.isNullOrBlank()) {
+            navController.navigate("subscription") {
+                popUpTo("reels") { inclusive = true }
+            }
+            return@LaunchedEffect
+        }
+        val hasPremium = UserSubscriptionSyncManager(dataStoreManager)
+            .syncUserSubscription(phone)
+        if (!hasPremium) {
+            AnalyticsManager.track("reels_access_blocked", mapOf("reason" to "not_subscribed"))
+            navController.navigate("subscription") {
+                popUpTo("reels") { inclusive = true }
+            }
+            return@LaunchedEffect
+        }
+
         isLoading = true
         try {
             reels = SupabaseClient.client

@@ -196,7 +196,6 @@ fun SubscriptionSetupFullScreenOverlay(
     visible: Boolean,
     ctaText: String = "Continue",
     ctaEnabled: Boolean = true,
-    errorText: String? = null,
     onContinue: () -> Unit
 ) {
     AnimatedVisibility(
@@ -255,16 +254,6 @@ fun SubscriptionSetupFullScreenOverlay(
                         lineHeight = 18.sp,
                         textAlign = TextAlign.Center
                     )
-                    if (!errorText.isNullOrBlank()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = errorText,
-                            color = Color(0xFFFFCDD2),
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
                     Spacer(Modifier.height(22.dp))
                     PremiumGradientCtaButton(
                         text = ctaText,

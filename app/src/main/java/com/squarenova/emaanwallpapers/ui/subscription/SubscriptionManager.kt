@@ -2,7 +2,7 @@ package com.squarenova.emaanwallpapers.ui.subscription
 
 import android.app.Application
 import android.content.Context
-import android.util.Log
+import com.squarenova.emaanwallpapers.util.SecureLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -72,7 +72,7 @@ object SubscriptionManager {
         val p = readPersistedKind()
         if (p == CheckoutKind.NONE) return
         if (pendingCheckout.compareAndSet(CheckoutKind.NONE, p)) {
-            Log.d(TAG, "Restored in-memory pending checkout from persistence: $p")
+            SecureLog.d(TAG, "Restored in-memory pending checkout from persistence: $p")
         }
     }
 
@@ -82,7 +82,7 @@ object SubscriptionManager {
     fun prepareCheckout(kind: CheckoutKind) {
         pendingCheckout.set(kind)
         persistKind(kind)
-        Log.d(TAG, "prepareCheckout: $kind")
+        SecureLog.d(TAG, "prepareCheckout: $kind")
     }
 
     /**
@@ -97,17 +97,17 @@ object SubscriptionManager {
         k = readPersistedKind()
         if (k != CheckoutKind.NONE) {
             clearPersistedKind()
-            Log.i(TAG, "Recovered checkout kind after process/activity loss: $k")
+            SecureLog.i(TAG, "Recovered checkout kind after process/activity loss: $k")
             return k
         }
         return CheckoutKind.NONE
     }
 
     fun onPaymentSuccess(paymentId: String) {
-        Log.d(TAG, "onPaymentSuccess razorpayPaymentId=$paymentId")
+        SecureLog.d(TAG, "onPaymentSuccess id=${SecureLog.redactId(paymentId)}")
         val kind = resolveKindForSuccess()
         if (kind == CheckoutKind.NONE) {
-            Log.w(TAG, "Payment success without prepareCheckout — ignoring (possible stale callback)")
+            SecureLog.w(TAG, "Payment success without prepareCheckout — ignoring")
             return
         }
         scope.launch {
@@ -115,12 +115,18 @@ object SubscriptionManager {
         }
     }
 
-    fun onPaymentError(description: String) {
-        Log.e(TAG, "onPaymentError: $description")
-        pendingCheckout.set(CheckoutKind.NONE)
+    fun onPaymentError(errorCode: Int, description: String) {
+        SecureLog.e(TAG, "onPaymentError code=$errorCode")
+        val kind = pendingCheckout.getAndSet(CheckoutKind.NONE)
         clearPersistedKind()
         scope.launch {
-            _paymentResult.emit(PaymentResult.Error(description))
+            _paymentResult.emit(
+                PaymentResult.Error(
+                    message = description,
+                    errorCode = errorCode,
+                    checkoutKind = kind,
+                )
+            )
         }
     }
 }
@@ -136,5 +142,9 @@ enum class CheckoutKind {
 
 sealed class PaymentResult {
     data class Success(val paymentId: String, val kind: CheckoutKind) : PaymentResult()
-    data class Error(val message: String) : PaymentResult()
+    data class Error(
+        val message: String,
+        val errorCode: Int = -1,
+        val checkoutKind: CheckoutKind = CheckoutKind.NONE,
+    ) : PaymentResult()
 }

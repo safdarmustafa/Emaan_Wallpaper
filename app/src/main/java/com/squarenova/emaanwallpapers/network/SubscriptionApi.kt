@@ -2,6 +2,7 @@ package com.squarenova.emaanwallpapers.network
 
 import android.util.Log
 import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.data.MandateDebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -181,6 +182,36 @@ object SubscriptionApi {
         }
     }
 
+    suspend fun activateTrial(phone: String): Result<String> = withRetry("activateTrial") {
+        try {
+            MandateDebugLog.activateTrialRequest(phone)
+            val json = JSONObject().apply { put("phone", phone) }
+            val request = Request.Builder()
+                .url(functionsBaseUrl() + "activate-trial")
+                .addHeader("Authorization", anonBearer())
+                .addHeader("Content-Type", "application/json")
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                val err = parseEdgeFunctionError(body, "activate-trial").ifBlank { "activateTrial failed" }
+                MandateDebugLog.activateTrialResponse(phone, success = false, trialEnd = null, error = err)
+                return@withRetry Result.failure(Exception(err))
+            }
+
+            val trialEnd = JSONObject(body).optString("trial_end")
+                .ifBlank { JSONObject(body).optString("current_period_end") }
+            MandateDebugLog.activateTrialResponse(phone, success = true, trialEnd = trialEnd, error = null)
+            Result.success(trialEnd)
+        } catch (e: Exception) {
+            MandateDebugLog.activateTrialResponse(phone, success = false, trialEnd = null, error = e.message)
+            Result.failure(e)
+        }
+    }
+
     suspend fun verifyMandate(subscriptionId: String): Result<String> = withRetry("verifyMandate") {
         try {
             val json = JSONObject().apply { put("subscription_id", subscriptionId) }
@@ -224,8 +255,11 @@ object SubscriptionApi {
             val attempt = idx + 1
             Log.d(TAG, "event=mandate_poll_attempt attempt=$attempt/$attempts sub=$subscriptionId")
             val r = verifyMandate(subscriptionId)
+            val rzStatus = r.getOrNull()
+            MandateDebugLog.verifyMandatePoll(attempt, attempts, subscriptionId, rzStatus)
             if (r.isSuccess) {
                 Log.i(TAG, "event=mandate_poll_success attempt=$attempt sub=$subscriptionId")
+                MandateDebugLog.verifyMandateResult(subscriptionId, true, rzStatus, null)
                 return@withContext r
             }
             val message = r.exceptionOrNull()?.message.orEmpty().lowercase()
@@ -233,12 +267,24 @@ object SubscriptionApi {
 
             // Terminal statuses shouldn't be retried.
             if ("cancelled" in message || "halted" in message || "completed" in message) {
+                MandateDebugLog.verifyMandateResult(
+                    subscriptionId,
+                    false,
+                    null,
+                    r.exceptionOrNull()?.message,
+                )
                 return@withContext Result.failure(
                     Exception(r.exceptionOrNull()?.message ?: "Mandate verification failed")
                 )
             }
             if (attempt < attempts) delay(delayMs)
         }
+        MandateDebugLog.verifyMandateResult(
+            subscriptionId,
+            false,
+            null,
+            lastError?.message ?: "Mandate verification timed out",
+        )
         Result.failure(lastError ?: Exception("Mandate verification timed out"))
     }
 

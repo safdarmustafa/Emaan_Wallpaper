@@ -134,6 +134,7 @@ serve(async (req) => {
       .update({
         razorpay_subscription_id: subId,
         subscription_status: "created",
+        is_subscribed: false,
         plan_id: planId,
       })
       .eq("phone_number", phone);

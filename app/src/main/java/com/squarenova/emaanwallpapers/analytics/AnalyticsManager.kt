@@ -72,13 +72,15 @@ object AnalyticsManager {
         eventName: String,
         props: Map<String, Any?> = emptyMap()
     ) {
-
-        providers.forEach {
-
-            it.track(
-                event = eventName,
-                props = props
-            )
+        try {
+            providers.forEach {
+                it.track(
+                    event = eventName,
+                    props = props
+                )
+            }
+        } catch (_: Exception) {
+            // Analytics must never affect app functionality.
         }
     }
 
@@ -106,9 +108,12 @@ object AnalyticsManager {
 
         if (userId.isBlank()) return
 
-        providers.forEach {
-
-            it.identify(userId)
+        try {
+            providers.forEach {
+                it.identify(userId)
+            }
+        } catch (_: Exception) {
+            // Analytics must never affect app functionality.
         }
     }
 
@@ -130,9 +135,12 @@ object AnalyticsManager {
      */
     fun flush() {
 
-        providers.forEach {
-
-            it.flush()
+        try {
+            providers.forEach {
+                it.flush()
+            }
+        } catch (_: Exception) {
+            // Analytics must never affect app functionality.
         }
     }
 }

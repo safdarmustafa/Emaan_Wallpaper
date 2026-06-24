@@ -24,6 +24,11 @@ import com.squarenova.emaanwallpapers.ui.splash.SplashScreen
 
 import com.squarenova.emaanwallpapers.ui.components.FloatingBottomBar
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionScreen
+import com.squarenova.emaanwallpapers.ui.legal.ContactUsScreen
+import com.squarenova.emaanwallpapers.ui.legal.DeleteAccountScreen
+import com.squarenova.emaanwallpapers.ui.legal.PrivacyPolicyScreen
+import com.squarenova.emaanwallpapers.ui.legal.SubscriptionDisclosureScreen
+import com.squarenova.emaanwallpapers.ui.legal.TermsAndConditionsScreen
 
 private val bottomNavScreens = listOf("home", "reels")
 
@@ -50,22 +55,25 @@ fun AppNavGraph() {
             composable("splash") { SplashScreen(navController) }
             composable("login") { LoginScreen(navController) }
             composable(
-                "otp/{otp}/{phone}",
+                "otp/{phone}",
                 arguments = listOf(
-                    navArgument("otp") { type = NavType.StringType },
-                    navArgument("phone") { type = NavType.StringType }
-                )
+                    navArgument("phone") { type = NavType.StringType },
+                ),
             ) { backStackEntry ->
                 OtpScreen(
                     navController = navController,
-                    sentOtp = backStackEntry.arguments?.getString("otp") ?: "",
-                    phone = backStackEntry.arguments?.getString("phone") ?: ""
+                    phone = backStackEntry.arguments?.getString("phone") ?: "",
                 )
             }
+            composable("privacy_policy") { PrivacyPolicyScreen(navController) }
+            composable("terms") { TermsAndConditionsScreen(navController) }
+            composable("contact_us") { ContactUsScreen(navController) }
+            composable("subscription_disclosure") { SubscriptionDisclosureScreen(navController) }
+            composable("delete_account_info") { DeleteAccountScreen(navController) }
             composable("profile_setup") { ProfileSetupScreen(navController) }
             composable("subscription") { SubscriptionScreen(navController) }
             composable("home") { HomeScreen(navController) }
-            composable("reels") { ReelsScreen() }
+            composable("reels") { ReelsScreen(navController) }
             composable("profile") { ProfileScreen(navController) }
         }
 

@@ -1,8 +1,9 @@
-# Copy lines below into `local.properties` (same file as sdk.dir). That file is gitignored.
-# Never commit real secrets to the repository.
+# Copy to `local.properties` (gitignored). Never commit real secrets.
 
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
 RAZORPAY_KEY_ID=rzp_test_OR_live_key_id
-FAST2SMS_API_KEY=your_fast2sms_authorization_key
 MIXPANEL_TOKEN=your_mixpanel_project_token_optional
+
+# Fast2SMS is server-side only — set via Supabase secrets:
+# supabase secrets set FAST2SMS_API_KEY=...

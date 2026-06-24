@@ -6,6 +6,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.facebook.FacebookSdk
 import com.facebook.appevents.AppEventsLogger
+import com.google.firebase.FirebaseApp
+import com.google.firebase.analytics.ktx.analytics
+import com.google.firebase.crashlytics.ktx.crashlytics
+import com.google.firebase.ktx.Firebase
 import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionManager
@@ -21,6 +25,14 @@ class App : Application() {
     override fun onCreate() {
 
         super.onCreate()
+
+        // =========================
+        // Firebase (Analytics + Crashlytics)
+        // =========================
+
+        FirebaseApp.initializeApp(this)
+        Firebase.analytics.setAnalyticsCollectionEnabled(true)
+        Firebase.crashlytics.isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG
 
         // =========================
         // Meta / Facebook SDK
@@ -45,18 +57,24 @@ class App : Application() {
             BuildConfig.MIXPANEL_TOKEN
         )
 
-        AnalyticsManager.trackEvent("App Launched")
-        AnalyticsManager.track("meta_test_event")
-
-        AnalyticsManager.flush()
+        try {
+            AnalyticsManager.trackEvent("App Launched")
+            AnalyticsManager.track("meta_test_event")
+            AnalyticsManager.flush()
+        } catch (_: Exception) {
+            // Analytics must never block or crash app startup.
+        }
 
         // Flush analytics when app goes background
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
 
                 override fun onStop(owner: LifecycleOwner) {
-
-                    AnalyticsManager.flush()
+                    try {
+                        AnalyticsManager.flush()
+                    } catch (_: Exception) {
+                        // Ignore analytics flush failures.
+                    }
                 }
             }
         )

@@ -26,7 +26,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.EmaanWallpapers"
-        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="false"
         tools:replace="android:theme">
 
         <!-- ========================= -->
@@ -51,7 +52,7 @@
         <!-- Set to false in production release -->
         <meta-data
             android:name="com.mixpanel.android.MPConfig.EnableDebugLogging"
-            android:value="true" />
+            android:value="false" />
 
         <!-- ========================= -->
         <!-- Main Activity -->
@@ -108,7 +109,7 @@
 
         <activity
             android:name=".ui.wallpaper.WallpaperPreviewActivity"
-            android:exported="true" />
+            android:exported="false" />
 
         <!-- ========================= -->
         <!-- File Provider -->

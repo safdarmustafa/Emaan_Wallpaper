@@ -26,6 +26,20 @@ val AppTextTertiary = Color(0xFF80868B)
 val AppDivider = Color(0xFFE8EBE9)
 val AppScrim = BrandGreen.copy(alpha = 0.08f)
 
+/** Profile — cream canvas, emerald accent, gold premium only */
+val BackgroundCream = Color(0xFFF7F5F0)
+val ProfileCardSurface = Color(0xFFFFFFFF)
+val ProfileEmerald = Color(0xFF0D5C4B)
+val ProfileEmeraldLight = Color(0xFF147A64)
+val ProfileGold = Color(0xFFC9A227)
+val ProfileGoldLight = Color(0xFFE8D48B)
+val ProfileStatusTrial = Color(0xFFF59E0B)
+val ProfileStatusPremium = Color(0xFF059669)
+val ProfileStatusEnding = Color(0xFFEA580C)
+val ProfileStatusExpired = Color(0xFFDC2626)
+val ProfileDanger = Color(0xFFB3261E)
+val ProfileDangerSurface = Color(0xFFFFF5F5)
+
 /** Home — aliases (minimal green: mostly white + gray, green for selection/accents) */
 val HomeBackground = AppBackground
 val HomeSurfaceStrip = AppSurface

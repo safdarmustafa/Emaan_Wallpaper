@@ -26,9 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.time.Instant
+import com.squarenova.emaanwallpapers.data.SupabaseTimestampParser
 import kotlinx.coroutines.delay
-import java.time.format.DateTimeParseException
 
 private val GoldStart = Color(0xFFD4AF37)
 private val GoldEnd = Color(0xFFFFD700)
@@ -108,14 +107,7 @@ fun PremiumBadge(
     }
 }
 
-private fun parseTrialEndMillis(iso: String?): Long? {
-    if (iso.isNullOrBlank()) return null
-    return try {
-        Instant.parse(iso).toEpochMilli()
-    } catch (_: DateTimeParseException) {
-        null
-    }
-}
+private fun parseTrialEndMillis(iso: String?): Long? = SupabaseTimestampParser.parseToEpochMillis(iso)
 
 @Composable
 fun TrialCountdown(

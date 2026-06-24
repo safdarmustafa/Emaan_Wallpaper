@@ -22,38 +22,30 @@ import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
-import com.squarenova.emaanwallpapers.network.Fast2SmsConfig
-import com.squarenova.emaanwallpapers.network.RetrofitClient
+import com.squarenova.emaanwallpapers.network.OtpApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.ui.profile.UserRow
+import com.squarenova.emaanwallpapers.util.SecureLog
 import io.github.jan.supabase.postgrest.postgrest
-import android.util.Log
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-
-// Keep same dummy-mode as LoginScreen for your test number(s).
-private val TEST_NUMBERS = listOf("7856906972")
-private const val DUMMY_OTP = 123456
 
 @Composable
 fun OtpScreen(
     navController: NavController,
-    sentOtp: String,
     phone: String
 ) {
 
     var enteredOtp by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     var isVerifying by remember { mutableStateOf(false) }
-    // Latest OTP (initially the one passed from Login, then updates after resend).
-    var currentOtp by remember { mutableStateOf(sentOtp) }
 
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
     val scope = rememberCoroutineScope()
 
-    // Resend OTP countdown
     var resendTimerKey by remember { mutableIntStateOf(0) }
     var remainingSeconds by remember { mutableIntStateOf(30) }
     var isResending by remember { mutableStateOf(false) }
@@ -108,7 +100,7 @@ fun OtpScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Code sent to $phone",
+                    text = "Code sent to +91 $phone",
                     fontSize = 14.sp,
                     color = Color(0xFF0F5132)
                 )
@@ -118,7 +110,6 @@ fun OtpScreen(
                 OutlinedTextField(
                     value = enteredOtp,
                     onValueChange = { input ->
-                        // Digits only, max 6 chars
                         val digitsOnly = input.filter { it.isDigit() }.take(6)
                         enteredOtp = digitsOnly
                         if (errorMessage.isNotEmpty()) errorMessage = ""
@@ -154,68 +145,73 @@ fun OtpScreen(
 
                 Button(
                     onClick = {
-                        // TODO: REMOVE "123456" BEFORE PRODUCTION
-                        if (enteredOtp == currentOtp || enteredOtp == "123456") {
-                            scope.launch {
-                                isVerifying = true
-                                try {
-                                    // ✅ Save phone to DataStore
-                                    dataStoreManager.saveLogin(phone)
-                                    AnalyticsManager.identify(phone)
+                        if (enteredOtp.length != 6) {
+                            errorMessage = "Enter the 6-digit OTP"
+                            return@Button
+                        }
+                        scope.launch {
+                            isVerifying = true
+                            try {
+                                val verifyResult = OtpApi.verifyOtp(phone, enteredOtp, caller = "login_otp_screen")
+                                if (verifyResult.isFailure) {
+                                    errorMessage = verifyResult.exceptionOrNull()?.message
+                                        ?: "Invalid OTP. Try again."
+                                    return@launch
+                                }
 
-                                    // ✅ Check if user exists in Supabase
-                                    val result = SupabaseClient.client
-                                        .postgrest["users"]
-                                        .select {
-                                            filter {
-                                                eq("phone_number", phone)
-                                            }
+                                dataStoreManager.saveLogin(phone)
+                                AnalyticsManager.identify(phone)
+
+                                val subscriptionSyncManager =
+                                    UserSubscriptionSyncManager(dataStoreManager)
+                                val isSubscribed =
+                                    subscriptionSyncManager.syncUserSubscription(phone)
+                                SecureLog.d(
+                                    "OTP_SCREEN",
+                                    "Post-login subscription sync: subscribed=$isSubscribed"
+                                )
+
+                                val result = SupabaseClient.client
+                                    .postgrest["users"]
+                                    .select {
+                                        filter {
+                                            eq("phone_number", phone)
                                         }
-                                        .decodeList<UserRow>()
+                                    }
+                                    .decodeList<UserRow>()
 
-                                    val existingUser = result.firstOrNull()
+                                val existingUser = result.firstOrNull()
 
-                                    // ✅ FIXED: Check first_name, not just row existence.
-                                    // A user row may exist but have no name if they
-                                    // previously skipped setup or it failed mid-way.
-                                    if (existingUser != null && !existingUser.first_name.isNullOrEmpty()) {
-                                        // ✅ Returning user — check subscription
-                                        dataStoreManager.setProfileCompleted()
-                                        val subscriptionSyncManager =
-                                            UserSubscriptionSyncManager(dataStoreManager)
-                                        val isSubscribed =
-                                            subscriptionSyncManager.syncUserSubscription(phone)
-                                        Log.d(
-                                            "OTP_SCREEN",
-                                            "Post-login subscription sync: phone=$phone, subscribed=$isSubscribed"
-                                        )
-                                        if (isSubscribed) {
-                                            // Already subscribed → Home (server is source of truth)
-                                            navController.navigate("home") {
-                                                popUpTo("login") { inclusive = true }
-                                            }
-                                        } else {
-                                            // Not subscribed → Subscription screen
-                                            navController.navigate("subscription") {
-                                                popUpTo("login") { inclusive = true }
-                                            }
+                                if (existingUser != null && !existingUser.first_name.isNullOrEmpty()) {
+                                    dataStoreManager.setProfileCompleted()
+                                    EntitlementDebugLog.navigation(
+                                        source = "OtpScreen",
+                                        destination = if (isSubscribed) "home" else "subscription",
+                                        subscriptionStatus = existingUser.subscription_status,
+                                        trialEnd = existingUser.trial_end,
+                                        hasPremiumAccess = isSubscribed,
+                                    )
+                                    if (isSubscribed) {
+                                        navController.navigate("home") {
+                                            popUpTo("login") { inclusive = true }
                                         }
                                     } else {
-                                        // ✅ New user → Profile setup first
-                                        navController.navigate("profile_setup") {
+                                        navController.navigate("subscription") {
                                             popUpTo("login") { inclusive = true }
                                         }
                                     }
-
-                                } catch (e: Exception) {
-                                    errorMessage = "Something went wrong. Try again."
-                                    e.printStackTrace()
-                                } finally {
-                                    isVerifying = false
+                                } else {
+                                    navController.navigate("profile_setup") {
+                                        popUpTo("login") { inclusive = true }
+                                    }
                                 }
+
+                            } catch (e: Exception) {
+                                SecureLog.e("OTP_SCREEN", "verify failed", e)
+                                errorMessage = "Something went wrong. Try again."
+                            } finally {
+                                isVerifying = false
                             }
-                        } else {
-                            errorMessage = "Invalid OTP. Try again."
                         }
                     },
                     enabled = !isVerifying,
@@ -254,32 +250,18 @@ fun OtpScreen(
                         isResending = true
                         scope.launch {
                             try {
-                                // Generate a new OTP (matches LoginScreen logic)
                                 val cleanPhone = phone.filter { it.isDigit() }
-                                val isDummyMode = cleanPhone in TEST_NUMBERS
-                                val newOtp = if (isDummyMode) DUMMY_OTP else (100000..999999).random()
-                                val message = "Your OTP for Emaan Wallpapers is $newOtp"
+                                val response = OtpApi.sendOtp(cleanPhone, caller = "login_resend")
 
-                                if (isDummyMode) {
-                                    // No SMS in dummy mode
-                                    Log.d("OTP_SCREEN", "DUMMY MODE resend OTP=$newOtp for $cleanPhone")
+                                if (response.isSuccess) {
+                                    resendMessage = "OTP sent successfully."
+                                    resendTimerKey += 1
                                 } else {
-                                    RetrofitClient.api.sendOtp(
-                                        authorization = Fast2SmsConfig.API_KEY,
-                                        message = message,
-                                        numbers = cleanPhone,
-                                        senderId = Fast2SmsConfig.DLT_SENDER_ID,
-                                        peId = Fast2SmsConfig.DLT_PE_ID,
-                                        templateId = Fast2SmsConfig.DLT_TE_ID
-                                    )
+                                    resendMessage = response.exceptionOrNull()?.message
+                                        ?: "Failed to resend OTP. Try again."
                                 }
-
-                                currentOtp = newOtp.toString()
-                                resendMessage = "OTP sent successfully."
-                                // Restart countdown
-                                resendTimerKey += 1
                             } catch (e: Exception) {
-                                Log.e("OTP_SCREEN_RESEND", e.message ?: "Unknown", e)
+                                SecureLog.e("OTP_SCREEN_RESEND", "resend failed", e)
                                 resendMessage = "Failed to resend OTP. Try again."
                             } finally {
                                 isResending = false

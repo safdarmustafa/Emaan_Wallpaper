@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
     kotlin("plugin.serialization") version "1.9.24" // ✅ Required for Supabase
 }
 
@@ -24,8 +25,8 @@ android {
         applicationId = "com.squarenova.emaanwallpapers"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -46,13 +47,32 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"${prop("SUPABASE_URL").escapeForBuildConfig()}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${prop("SUPABASE_ANON_KEY").escapeForBuildConfig()}\"")
         buildConfigField("String", "RAZORPAY_KEY_ID", "\"${prop("RAZORPAY_KEY_ID").escapeForBuildConfig()}\"")
-        buildConfigField("String", "FAST2SMS_API_KEY", "\"${prop("FAST2SMS_API_KEY").escapeForBuildConfig()}\"")
         buildConfigField("String", "MIXPANEL_TOKEN", "\"${prop("MIXPANEL_TOKEN").escapeForBuildConfig()}\"")
+    }
+
+    signingConfigs {
+        val keystoreProps = Properties()
+        rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use {
+            keystoreProps.load(it)
+        }
+        create("release") {
+            val storeFilePath = keystoreProps.getProperty("storeFile")?.trim().orEmpty()
+            if (storeFilePath.isNotEmpty()) {
+                storeFile = file(storeFilePath)
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release").takeIf {
+                it.storeFile != null
+            } ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -105,8 +125,8 @@ dependencies {
 
     // 🔥 Firebase BOM (keeping for auth-related stuff)
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-    implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
 
     // 🔐 DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
@@ -133,6 +153,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("androidx.compose.material:material-icons-extended")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

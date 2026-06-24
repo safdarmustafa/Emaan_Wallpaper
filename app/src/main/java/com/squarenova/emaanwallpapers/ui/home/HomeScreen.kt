@@ -62,7 +62,7 @@ import com.squarenova.emaanwallpapers.theme.HomeFilterIconIdle
 import com.squarenova.emaanwallpapers.theme.HomeSurfaceStrip
 import com.squarenova.emaanwallpapers.ui.components.CompactTopBar
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
+import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.network.WallpaperCatalog
 import com.squarenova.emaanwallpapers.network.WallpaperRow
 import com.squarenova.emaanwallpapers.network.isLiveWallpaper
@@ -192,10 +192,15 @@ fun HomeScreen(navController: NavController) {
     var redirectedToSubscription by remember { mutableStateOf(false) }
     var lastTrackedSubscriptionStatus by rememberSaveable { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(isLoading, user?.is_subscribed, user?.phone_number) {
+    LaunchedEffect(isLoading, user?.subscription_status, user?.trial_end, user?.phone_number) {
         if (isLoading || redirectedToSubscription) return@LaunchedEffect
 
-        if (user?.is_subscribed == true) {
+        if (SubscriptionEntitlement.hasPremiumAccess(
+                user?.subscription_status,
+                user?.trial_end,
+                user?.is_subscribed,
+            )
+        ) {
             return@LaunchedEffect
         }
 
@@ -223,7 +228,12 @@ fun HomeScreen(navController: NavController) {
                 user = refreshed
                 avatarUrl = refreshed.avatar_url
                 cachedFirstName = refreshed.first_name
-                if (refreshed.is_subscribed == true) {
+                if (SubscriptionEntitlement.hasPremiumAccess(
+                        refreshed.subscription_status,
+                        refreshed.trial_end,
+                        refreshed.is_subscribed,
+                    )
+                ) {
                     return@LaunchedEffect
                 }
             } catch (e: Exception) {
@@ -231,7 +241,12 @@ fun HomeScreen(navController: NavController) {
             }
         }
 
-        if (!redirectedToSubscription && user?.is_subscribed != true) {
+        if (!redirectedToSubscription && !SubscriptionEntitlement.hasPremiumAccess(
+                user?.subscription_status,
+                user?.trial_end,
+                user?.is_subscribed,
+            )
+        ) {
             val reason = when (user?.subscription_status?.lowercase()) {
                 "expired" -> "expired"
                 else -> "not_subscribed"
@@ -240,7 +255,7 @@ fun HomeScreen(navController: NavController) {
             AnalyticsManager.track("paywall_shown", mapOf("reason" to reason))
             Log.d(
                 "HOME_ACCESS_GUARD",
-                "Redirecting: userSubscribed=${user?.is_subscribed}"
+                "Redirecting: status=${user?.subscription_status} trialEnd=${user?.trial_end}"
             )
             redirectedToSubscription = true
             navController.navigate("subscription") {
@@ -268,12 +283,6 @@ fun HomeScreen(navController: NavController) {
         try {
             val phone = dataStoreManager.phoneNumber.firstOrNull()
             if (!phone.isNullOrEmpty()) {
-                val isSubscribed = UserSubscriptionSyncManager(dataStoreManager)
-                    .syncUserSubscription(phone)
-                Log.d(
-                    "HOME_SUB_SYNC",
-                    "Initial home sync: phone=$phone, subscribed=$isSubscribed"
-                )
                 val result = SupabaseClient.client
                     .postgrest["users"]
                     .select(
@@ -324,12 +333,6 @@ fun HomeScreen(navController: NavController) {
                     try {
                         val phone = dataStoreManager.phoneNumber.firstOrNull()
                         if (!phone.isNullOrEmpty()) {
-                            val isSubscribed = UserSubscriptionSyncManager(dataStoreManager)
-                                .syncUserSubscription(phone)
-                            Log.d(
-                                "HOME_SUB_SYNC",
-                                "Resume home sync: phone=$phone, subscribed=$isSubscribed"
-                            )
                             val result = SupabaseClient.client
                                 .postgrest["users"]
                                 .select(
@@ -472,14 +475,21 @@ fun HomeScreen(navController: NavController) {
 
         Column(modifier = Modifier.fillMaxSize().background(homeBg)) {
 
+            val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
+                user?.subscription_status,
+                user?.trial_end,
+                user?.is_subscribed,
+            )
+
             CompactTopBar(
                 greeting = "Assalamu Alaikum 🌙",
                 title = if (!isLoading) (user?.first_name ?: cachedFirstName) ?: "Guest" else "",
                 isLoadingTitle = isLoading,
                 avatarUrl = avatarUrl,
                 avatarInitial = avatarInitial,
-                isSubscribed = user?.is_subscribed == true,
+                isSubscribed = hasPremium,
                 subscriptionStatus = user?.subscription_status,
+                trialEndIso = user?.trial_end,
                 onProfileClick = { navController.navigate("profile") }
             )
 

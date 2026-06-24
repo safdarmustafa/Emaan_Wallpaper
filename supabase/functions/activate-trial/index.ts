@@ -4,8 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const jsonHeaders = { "Content-Type": "application/json" };
 const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
 
-/** Razorpay may lag updating status after mandate; we allow these states for trial activation. */
-const ALLOWED_TRIAL_STATUSES = new Set(["created", "authenticated", "active"]);
+/** Razorpay mandate must be authenticated (or already active) before trial is granted. */
+const ALLOWED_TRIAL_STATUSES = new Set(["authenticated", "active"]);
 
 serve(async (req) => {
   if (req.method !== "POST") {
@@ -115,14 +115,23 @@ serve(async (req) => {
 
     const trialEnd = new Date(Date.now() + TRIAL_MS).toISOString();
 
+    const patch =
+      status === "active"
+        ? {
+            is_subscribed: true,
+            subscription_status: "active",
+            trial_paid: true,
+          }
+        : {
+            is_subscribed: false,
+            subscription_status: "trial",
+            trial_paid: true,
+            trial_end: trialEnd,
+          };
+
     const { data: updated, error: upErr } = await supabase
       .from("users")
-      .update({
-        is_subscribed: true,
-        subscription_status: "trial",
-        trial_paid: true,
-        trial_end: trialEnd,
-      })
+      .update(patch)
       .eq("phone_number", phone)
       .select("phone_number");
 

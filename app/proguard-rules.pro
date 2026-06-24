@@ -1,21 +1,46 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Emaan Wallpapers — release shrinking rules
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# BuildConfig
+-keep class com.squarenova.emaanwallpapers.BuildConfig { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Razorpay
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-dontwarn com.razorpay.**
+
+# Kotlin serialization (Supabase models)
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.**
+-keep,includedescriptorclasses class com.squarenova.emaanwallpapers.**$$serializer { *; }
+-keepclassmembers class com.squarenova.emaanwallpapers.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.squarenova.emaanwallpapers.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
+# Retrofit / OkHttp
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class retrofit2.** { *; }
+
+# Coil
+-dontwarn coil.**
+
+# Mixpanel / Facebook
+-dontwarn com.mixpanel.**
+-dontwarn com.facebook.**
+
+# Strip debug-only log classes in release (optional shrink)
+-assumenosideeffects class com.squarenova.emaanwallpapers.data.MandateDebugLog {
+    public static *** note(...);
+    public static *** entitlementCheck(...);
+}
+-assumenosideeffects class com.squarenova.emaanwallpapers.data.EntitlementDebugLog {
+    public static *** check(...);
+    public static *** navigation(...);
+}

@@ -113,7 +113,9 @@ serve(async (req) => {
     } else if (rzStatus === "halted" || rzStatus === "completed" || rzStatus === "expired") {
       patch = { is_subscribed: false, subscription_status: "expired" };
     } else if (rzStatus === "authenticated") {
-      patch = { subscription_status: "created" };
+      patch = { subscription_status: "authenticated", is_subscribed: false };
+    } else if (rzStatus === "created") {
+      patch = { subscription_status: "created", is_subscribed: false };
     }
 
     if (Object.keys(patch).length > 0) {

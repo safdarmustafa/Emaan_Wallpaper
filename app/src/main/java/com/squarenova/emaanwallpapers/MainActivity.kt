@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
         val errorMsg = errorDescription ?: "Payment failed"
         Log.e("RAZORPAY", "Error [$errorCode]: $errorMsg")
         runOnUiThread {
-            SubscriptionManager.onPaymentError(errorMsg)
+            SubscriptionManager.onPaymentError(errorCode, errorMsg)
         }
     }
 }

@@ -1,10 +1,8 @@
 package com.squarenova.emaanwallpapers.data
 
 import android.util.Log
-import com.squarenova.emaanwallpapers.network.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
+import com.squarenova.emaanwallpapers.BuildConfig
 import kotlinx.coroutines.flow.first
-import kotlinx.serialization.Serializable
 
 class UserSubscriptionSyncManager(
     private val dataStoreManager: DataStoreManager
@@ -13,48 +11,69 @@ class UserSubscriptionSyncManager(
         private const val TAG = "USER_SUB_SYNC"
     }
 
-    @Serializable
-    private data class SubscriptionSyncRow(
-        val is_subscribed: Boolean? = false
-    )
-
     /**
-     * Syncs subscription flag from Supabase (source of truth) to DataStore cache.
-     * Returns the final value that app should use for current session.
+     * Syncs premium entitlement from Supabase to DataStore cache.
+     * Returns whether the user has premium access for the current session.
+     * Never throws — on failure returns the cached DataStore value.
      */
     suspend fun syncUserSubscription(phone: String): Boolean {
+        val cached = try {
+            dataStoreManager.isSubscribed.first()
+        } catch (e: Exception) {
+            if (BuildConfig.DEBUG) {
+                Log.w(TAG, "syncUserSubscription: could not read DataStore cache", e)
+            }
+            false
+        }
+
         val cleanPhone = phone.trim()
         if (cleanPhone.isBlank()) {
-            val cached = dataStoreManager.isSubscribed.first()
-            Log.d(TAG, "syncUserSubscription: empty phone, using cached=$cached")
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "syncUserSubscription: empty phone, using cached=$cached")
+            }
             return cached
         }
 
         return try {
-            Log.d(TAG, "syncUserSubscription: fetching users.is_subscribed for phone=$cleanPhone")
-            val row = SupabaseClient.client
-                .postgrest["users"]
-                .select {
-                    filter { eq("phone_number", cleanPhone) }
-                }
-                .decodeList<SubscriptionSyncRow>()
-                .firstOrNull()
+            var row = MandateEntitlementResolver.fetchRow(cleanPhone)
 
-            val subscribed = row?.is_subscribed == true
-            if (subscribed) {
+            val initialPremium = SubscriptionEntitlement.hasPremiumAccess(
+                subscriptionStatus = row?.subscription_status,
+                trialEndIso = row?.trial_end,
+            )
+            MandateDebugLog.entitlementCheck(
+                source = "syncUserSubscription:initial",
+                subscriptionStatus = row?.subscription_status,
+                trialPaid = row?.trial_paid,
+                trialEnd = row?.trial_end,
+                hasPremiumAccess = initialPremium,
+            )
+
+            row = MandateEntitlementResolver.ensureTrialActivatedIfNeeded(cleanPhone, row)
+
+            val hasPremium = MandateEntitlementResolver.hasPremium(row)
+
+            MandateDebugLog.syncResult(
+                phone = cleanPhone,
+                hasPremium = hasPremium,
+                subscriptionStatus = row?.subscription_status,
+                trialEnd = row?.trial_end,
+            )
+
+            if (hasPremium) {
                 dataStoreManager.setSubscribed()
-                Log.d(TAG, "syncUserSubscription: server=true, DataStore updated to subscribed")
             } else {
                 dataStoreManager.setUnsubscribed()
-                Log.d(TAG, "syncUserSubscription: server=false, DataStore updated to unsubscribed")
             }
-            subscribed
+            hasPremium
         } catch (e: Exception) {
-            val cached = dataStoreManager.isSubscribed.first()
-            Log.d(
-                TAG,
-                "syncUserSubscription: network/error fallback to cached=$cached, error=${e.message}"
-            )
+            if (BuildConfig.DEBUG) {
+                Log.d(
+                    TAG,
+                    "syncUserSubscription: network/error fallback to cached=$cached, error=${e.message}"
+                )
+            }
+            MandateDebugLog.note("syncUserSubscription error=${e.message} fallback cached=$cached")
             cached
         }
     }

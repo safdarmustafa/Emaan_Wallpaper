@@ -21,13 +21,9 @@ import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
-import com.squarenova.emaanwallpapers.network.RetrofitClient
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
-import com.squarenova.emaanwallpapers.network.Fast2SmsConfig
-
-// TODO: REMOVE BEFORE PRODUCTION
-private val TEST_NUMBERS = listOf("7856906972")
-private const val DUMMY_OTP = 123456
+import com.squarenova.emaanwallpapers.network.OtpApi
+import com.squarenova.emaanwallpapers.util.SecureLog
 
 @Composable
 fun LoginScreen(navController: NavController) {
@@ -40,7 +36,6 @@ fun LoginScreen(navController: NavController) {
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // 🌙 Mosque Background
         Image(
             painter = painterResource(id = R.drawable.mosque),
             contentDescription = null,
@@ -48,14 +43,12 @@ fun LoginScreen(navController: NavController) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // 🌿 Dark Green Overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF064E3B).copy(alpha = 0.55f))
         )
 
-        // ✨ Glass Card
         Card(
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
@@ -92,7 +85,6 @@ fun LoginScreen(navController: NavController) {
                 OutlinedTextField(
                     value = phoneNumber,
                     onValueChange = { input ->
-                        // Digits only, max 10 chars
                         val digitsOnly = input.filter { it.isDigit() }.take(10)
                         phoneNumber = digitsOnly
                         if (errorMessage.isNotEmpty()) errorMessage = ""
@@ -117,6 +109,15 @@ fun LoginScreen(navController: NavController) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                Text(
+                    text = "We send a one-time code via SMS. Standard message rates may apply.",
+                    fontSize = 11.sp,
+                    color = Color(0xFF0F5132).copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 if (errorMessage.isNotEmpty()) {
                     Text(
                         text = errorMessage,
@@ -129,6 +130,7 @@ fun LoginScreen(navController: NavController) {
 
                 Button(
                     onClick = {
+                        if (isLoading) return@Button
                         AnalyticsManager.trackEvent("Login - Continue Tapped")
 
                         val cleanNumber = phoneNumber.filter { it.isDigit() }
@@ -141,48 +143,24 @@ fun LoginScreen(navController: NavController) {
                         errorMessage = ""
                         isLoading = true
 
-                        // TODO: REMOVE BEFORE PRODUCTION
-                        val isDummyMode = cleanNumber in TEST_NUMBERS
-                        val otp = if (isDummyMode) DUMMY_OTP else (100000..999999).random()
-                        val message = "Your OTP for Emaan Wallpapers is $otp"
-
                         scope.launch {
                             try {
-                                if (isDummyMode) {
-                                    // ✅ Skip real SMS — saves Fast2SMS tokens
-                                    println("DUMMY MODE: OTP for $cleanNumber is $otp (no SMS sent)")
-                                    isLoading = false
-                                    navController.navigate("otp/$otp/$cleanNumber")
+                                val result = OtpApi.sendOtp(cleanNumber, caller = "login")
+                                if (result.isSuccess) {
+                                    navController.navigate("otp/$cleanNumber")
                                 } else {
-                                    // ✅ Real SMS for all other numbers
-                                    val response = RetrofitClient.api.sendOtp(
-                                        authorization = Fast2SmsConfig.API_KEY,
-                                        message = message,
-                                        numbers = cleanNumber,
-                                        senderId = Fast2SmsConfig.DLT_SENDER_ID,
-                                        peId = Fast2SmsConfig.DLT_PE_ID,
-                                        templateId = Fast2SmsConfig.DLT_TE_ID
-                                    )
-
-                                    println("HTTP Code: ${response.code()}")
-                                    println("Response Body: ${response.body()}")
-
-                                    isLoading = false
-
-                                    if (response.isSuccessful) {
-                                        navController.navigate("otp/$otp/$cleanNumber")
-                                    } else {
-                                        errorMessage = "Failed to send OTP"
-                                    }
+                                    errorMessage = result.exceptionOrNull()?.message
+                                        ?: "Failed to send OTP"
                                 }
-
                             } catch (e: Exception) {
-                                isLoading = false
+                                SecureLog.e("LOGIN", "sendOtp failed", e)
                                 errorMessage = "Network error"
-                                println("EXCEPTION: ${e.message}")
+                            } finally {
+                                isLoading = false
                             }
                         }
                     },
+                    enabled = !isLoading,
                     shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFD4AF37)
