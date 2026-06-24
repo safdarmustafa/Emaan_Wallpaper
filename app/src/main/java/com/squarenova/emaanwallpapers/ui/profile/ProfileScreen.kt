@@ -17,12 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
@@ -34,6 +34,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -71,6 +73,8 @@ import com.squarenova.emaanwallpapers.network.AccountDeletionApi
 import com.squarenova.emaanwallpapers.network.OtpApi
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.ui.legal.LegalUrlOpener
+import com.squarenova.emaanwallpapers.ui.legal.LegalUrls
 import com.squarenova.emaanwallpapers.theme.AppDivider
 import com.squarenova.emaanwallpapers.theme.AppSurface
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
@@ -123,6 +127,7 @@ fun ProfileScreen(navController: NavController) {
     var avatarUrl by remember { mutableStateOf<String?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var profileMessage by remember { mutableStateOf<ProfileMessage?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -262,6 +267,15 @@ fun ProfileScreen(navController: NavController) {
                         isSaving = false
                     }
                 }
+            },
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutAppDialog(
+            onDismiss = {
+                AnalyticsManager.trackEvent("Profile - About Dialog Dismissed")
+                showAboutDialog = false
             },
         )
     }
@@ -581,25 +595,6 @@ fun ProfileScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(ProfileSectionSpacing))
 
-            ProfileQuickActionsSection(
-                actions = listOf(
-                    ProfileQuickAction("Favorites", Icons.Default.Favorite) {
-                        showComingSoon("Favorites")
-                    },
-                    ProfileQuickAction("Downloads", Icons.Default.Download) {
-                        showComingSoon("Downloads")
-                    },
-                    ProfileQuickAction("History", Icons.Default.History) {
-                        showComingSoon("Wallpapers History")
-                    },
-                    ProfileQuickAction("Notifications", Icons.Default.Notifications) {
-                        showComingSoon("Notifications")
-                    },
-                ),
-            )
-
-            Spacer(modifier = Modifier.height(ProfileSectionSpacing))
-
             ProfileAccountSection(
                 items = listOf(
                     ProfileAccountItem(
@@ -612,34 +607,13 @@ fun ProfileScreen(navController: NavController) {
                         },
                     ),
                     ProfileAccountItem(
-                        title = "Privacy Policy",
-                        subtitle = "How we protect your data",
-                        icon = Icons.Default.Security,
-                        onClick = { navController.navigate("privacy_policy") },
-                    ),
-                    ProfileAccountItem(
-                        title = "Terms & Conditions",
-                        subtitle = "Usage terms for the app",
-                        icon = Icons.Default.Description,
-                        onClick = { navController.navigate("terms") },
-                    ),
-                    ProfileAccountItem(
-                        title = "Subscription Terms",
-                        subtitle = "Auto-renewal and cancellation",
-                        icon = Icons.Default.Description,
-                        onClick = { navController.navigate("subscription_disclosure") },
-                    ),
-                    ProfileAccountItem(
-                        title = "Help & Support",
-                        subtitle = "Contact our support team",
-                        icon = Icons.AutoMirrored.Filled.Help,
-                        onClick = { navController.navigate("contact_us") },
-                    ),
-                    ProfileAccountItem(
                         title = "About App",
-                        subtitle = "Version and credits",
+                        subtitle = "About Emaan Wallpapers · v${BuildConfig.VERSION_NAME}",
                         icon = Icons.Default.Info,
-                        onClick = { showComingSoon("About App") },
+                        onClick = {
+                            AnalyticsManager.trackEvent("Profile - About App Tapped")
+                            showAboutDialog = true
+                        },
                     ),
                     ProfileAccountItem(
                         title = "Share App",
@@ -655,6 +629,52 @@ fun ProfileScreen(navController: NavController) {
                                 )
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share Emaan Wallpapers"))
+                        },
+                    ),
+                ),
+            )
+
+            Spacer(modifier = Modifier.height(ProfileSectionSpacing))
+
+            ProfileLegalSupportSection(
+                items = listOf(
+                    ProfileAccountItem(
+                        title = "Privacy Policy",
+                        subtitle = "squarenovatech.com/privacy-policy",
+                        icon = Icons.Default.Security,
+                        opensExternal = true,
+                        onClick = {
+                            AnalyticsManager.trackEvent("Profile - Privacy Policy Tapped")
+                            LegalUrlOpener.openPrivacyPolicy(context)
+                        },
+                    ),
+                    ProfileAccountItem(
+                        title = "Terms & Conditions",
+                        subtitle = "squarenovatech.com/terms-and-conditions",
+                        icon = Icons.Default.Gavel,
+                        opensExternal = true,
+                        onClick = {
+                            AnalyticsManager.trackEvent("Profile - Terms Tapped")
+                            LegalUrlOpener.openTermsAndConditions(context)
+                        },
+                    ),
+                    ProfileAccountItem(
+                        title = "Subscription Disclosure",
+                        subtitle = "₹5 trial, ₹99/month auto-renewal, refunds",
+                        icon = Icons.Default.WorkspacePremium,
+                        opensExternal = true,
+                        onClick = {
+                            AnalyticsManager.trackEvent("Profile - Subscription Disclosure Tapped")
+                            LegalUrlOpener.openSubscriptionDisclosure(context)
+                        },
+                    ),
+                    ProfileAccountItem(
+                        title = "Contact Us",
+                        subtitle = LegalUrls.SUPPORT_EMAIL,
+                        icon = Icons.AutoMirrored.Filled.Help,
+                        onClick = {
+                            AnalyticsManager.trackEvent("Profile - Contact Us Tapped")
+                            navController.navigate("contact_us")
                         },
                     ),
                 ),
@@ -866,5 +886,176 @@ fun CancelSubscriptionDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AboutAppDialog(
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scrollState = rememberScrollState()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = AppSurface),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(scrollState),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = BrandGreen,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Text(
+                        text = "About Emaan Wallpapers",
+                        color = AppTextPrimary,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                HorizontalDivider(
+                    color = AppDivider,
+                    modifier = Modifier.padding(vertical = 14.dp),
+                )
+
+                Text(
+                    text = "Emaan Wallpapers is a premium Islamic wallpaper application designed to bring " +
+                        "inspiration, peace, and beauty to your device through carefully curated Islamic " +
+                        "wallpapers, calligraphy, architecture, and spiritual artwork.",
+                    color = AppTextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = 22.sp,
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Our mission is to help users stay connected with faith by providing meaningful " +
+                        "wallpapers that inspire remembrance, reflection, and positivity throughout the day.",
+                    color = AppTextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = 22.sp,
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Features include HD wallpapers, premium collections, secure account management, " +
+                        "and a seamless experience built for the Muslim community.",
+                    color = AppTextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = 22.sp,
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                AboutInfoRow(
+                    icon = Icons.Default.Info,
+                    label = "Version",
+                    value = BuildConfig.VERSION_NAME,
+                )
+                HorizontalDivider(color = AppDivider)
+                AboutInfoRow(
+                    icon = Icons.Default.Business,
+                    label = "Developer",
+                    value = "Square Nova TECH",
+                )
+                HorizontalDivider(color = AppDivider)
+                AboutInfoRow(
+                    icon = Icons.Default.Language,
+                    label = "Website",
+                    value = "squarenovatech.com",
+                    onClick = { LegalUrlOpener.openWebsite(context) },
+                )
+                HorizontalDivider(color = AppDivider)
+                AboutInfoRow(
+                    icon = Icons.Default.Email,
+                    label = "Support",
+                    value = "support@squarenovatech.com",
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:support@squarenovatech.com")
+                            putExtra(Intent.EXTRA_SUBJECT, "Emaan Wallpapers Support")
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Contact support"))
+                    },
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreen),
+                ) {
+                    Text("Close", color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutInfoRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null,
+) {
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 12.dp)
+
+    val content = @Composable {
+        Row(
+            modifier = rowModifier,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = BrandGreen,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.size(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    color = AppTextSecondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = value,
+                    color = AppTextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+
+    if (onClick != null) {
+        androidx.compose.material3.Surface(
+            onClick = onClick,
+            color = Color.Transparent,
+            content = { content() },
+        )
+    } else {
+        content()
     }
 }

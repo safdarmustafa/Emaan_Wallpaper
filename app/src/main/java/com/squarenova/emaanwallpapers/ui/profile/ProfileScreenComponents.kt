@@ -21,9 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -513,15 +513,29 @@ data class ProfileAccountItem(
     val subtitle: String,
     val icon: ImageVector,
     val enabled: Boolean = true,
+    val opensExternal: Boolean = false,
     val onClick: () -> Unit,
 )
+
+@Composable
+fun ProfileLegalSupportSection(
+    items: List<ProfileAccountItem>,
+    modifier: Modifier = Modifier,
+) {
+    ProfileSectionTitle(title = "Legal & Support", modifier = modifier)
+    ProfileAccountSection(items = items, showSectionTitle = false)
+}
 
 @Composable
 fun ProfileAccountSection(
     items: List<ProfileAccountItem>,
     modifier: Modifier = Modifier,
+    sectionTitle: String = "Account",
+    showSectionTitle: Boolean = true,
 ) {
-    ProfileSectionTitle(title = "Account", modifier = modifier)
+    if (showSectionTitle) {
+        ProfileSectionTitle(title = sectionTitle, modifier = modifier)
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -590,10 +604,14 @@ private fun ProfileAccountListRow(item: ProfileAccountItem) {
                 }
             }
             Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
+                imageVector = if (item.opensExternal) {
+                    Icons.AutoMirrored.Filled.OpenInNew
+                } else {
+                    Icons.Default.ChevronRight
+                },
+                contentDescription = if (item.opensExternal) "Opens in browser" else null,
                 tint = AppTextTertiary,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
     }

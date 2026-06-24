@@ -61,6 +61,7 @@ import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.ui.legal.LegalUrlOpener
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -1003,7 +1004,10 @@ fun SubscriptionScreen(navController: NavController) {
                 )
 
                 TextButton(
-                    onClick = { navController.navigate("subscription_disclosure") },
+                    onClick = {
+                        AnalyticsManager.trackEvent("Subscription - Disclosure Link Tapped")
+                        LegalUrlOpener.openSubscriptionDisclosure(context)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
