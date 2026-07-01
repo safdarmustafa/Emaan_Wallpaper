@@ -41,6 +41,18 @@ google-services.json
 # ==============================
 *.jks
 *.keystore
+# ==============================
+# Signing
+# ==============================
+keystore.properties
+
+# ==============================
+# Release Outputs
+# ==============================
+app/release/
+
+# macOS
+.DS_Store
 
 # ==============================
 # Kotlin / Misc

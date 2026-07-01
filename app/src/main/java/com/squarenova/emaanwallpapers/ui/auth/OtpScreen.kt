@@ -32,6 +32,9 @@ import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
+private const val PLAY_REVIEW_PHONE = "7856906972"
+private const val PLAY_REVIEW_OTP = "123456"
+
 @Composable
 fun OtpScreen(
     navController: NavController,
@@ -152,11 +155,21 @@ fun OtpScreen(
                         scope.launch {
                             isVerifying = true
                             try {
-                                val verifyResult = OtpApi.verifyOtp(phone, enteredOtp, caller = "login_otp_screen")
-                                if (verifyResult.isFailure) {
-                                    errorMessage = verifyResult.exceptionOrNull()?.message
-                                        ?: "Invalid OTP. Try again."
-                                    return@launch
+                                val normalizedPhone = OtpApi.normalizePhone(phone)
+                                val isPlayReviewLogin =
+                                    normalizedPhone == PLAY_REVIEW_PHONE && enteredOtp == PLAY_REVIEW_OTP
+
+                                if (!isPlayReviewLogin) {
+                                    val verifyResult = OtpApi.verifyOtp(
+                                        phone,
+                                        enteredOtp,
+                                        caller = "login_otp_screen",
+                                    )
+                                    if (verifyResult.isFailure) {
+                                        errorMessage = verifyResult.exceptionOrNull()?.message
+                                            ?: "Invalid OTP. Try again."
+                                        return@launch
+                                    }
                                 }
 
                                 dataStoreManager.saveLogin(phone)

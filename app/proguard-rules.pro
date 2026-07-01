@@ -44,3 +44,5 @@
     public static *** check(...);
     public static *** navigation(...);
 }
+
+-dontwarn org.slf4j.impl.StaticLoggerBinder

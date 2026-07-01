@@ -4,7 +4,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     id("com.google.gms.google-services")
-    id("com.google.firebase.crashlytics")
     kotlin("plugin.serialization") version "1.9.24" // ✅ Required for Supabase
 }
 
@@ -25,7 +24,7 @@ android {
         applicationId = "com.squarenova.emaanwallpapers"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
+        versionCode = 4
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -101,7 +100,7 @@ dependencies {
     implementation("com.razorpay:checkout:1.6.41")
     implementation("com.razorpay:standard-core:1.6.56")
 
-    // Coil gif dependency and Mp4 videos
+    // Coil dependency and Mp4 videos
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")
     implementation("io.coil-kt:coil-gif:2.6.0")
@@ -126,7 +125,7 @@ dependencies {
     // 🔥 Firebase BOM (keeping for auth-related stuff)
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-analytics-ktx")
-    implementation("com.google.firebase:firebase-crashlytics-ktx")
+   // implementation("com.google.firebase:firebase-crashlytics-ktx")
 
     // 🔐 DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")

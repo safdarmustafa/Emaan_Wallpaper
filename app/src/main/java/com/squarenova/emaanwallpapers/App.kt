@@ -8,9 +8,7 @@ import com.facebook.FacebookSdk
 import com.facebook.appevents.AppEventsLogger
 import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.ktx.analytics
-import com.google.firebase.crashlytics.ktx.crashlytics
 import com.google.firebase.ktx.Firebase
-import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionManager
 import coil.Coil
@@ -19,6 +17,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager.init
 
 class App : Application() {
 
@@ -26,20 +25,21 @@ class App : Application() {
 
         super.onCreate()
 
-        // =========================
-        // Firebase (Analytics + Crashlytics)
-        // =========================
+
+// =========================
+// Firebase (Analytics)
+// =========================
 
         FirebaseApp.initializeApp(this)
         Firebase.analytics.setAnalyticsCollectionEnabled(true)
-        Firebase.crashlytics.isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG
+
+
 
         // =========================
         // Meta / Facebook SDK
         // =========================
 
-        FacebookSdk.sdkInitialize(applicationContext)
-
+        FacebookSdk.fullyInitialize()
         AppEventsLogger.activateApp(this)
 
         // =========================
@@ -52,7 +52,7 @@ class App : Application() {
         // Analytics
         // =========================
 
-        AnalyticsManager.init(
+        init(
             this,
             BuildConfig.MIXPANEL_TOKEN
         )
