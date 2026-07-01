@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.outlined.MusicNote
 
 data class FloatingNavItem(
     val route: String,
@@ -62,8 +64,26 @@ fun FloatingBottomBar(
     modifier: Modifier = Modifier
 ) {
     val items = listOf(
-        FloatingNavItem("home", "Wallpapers", Icons.Filled.Home, Icons.Outlined.Home),
-        FloatingNavItem("reels", "Reels", Icons.Filled.Star, Icons.Outlined.Star)
+        FloatingNavItem(
+            "home",
+            "Wallpapers",
+            Icons.Filled.Home,
+            Icons.Outlined.Home
+        ),
+
+        FloatingNavItem(
+            "reels",
+            "Reels",
+            Icons.Filled.Star,
+            Icons.Outlined.Star
+        ),
+
+        FloatingNavItem(
+            "ringtone",
+            "Ringtone",
+            Icons.Filled.MusicNote,
+            Icons.Outlined.MusicNote
+        )
     )
     val barSurface = HomeFloatingBarSurface
 
@@ -73,7 +93,8 @@ fun FloatingBottomBar(
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .fillMaxWidth(0.88f)
             // Only navigation-bar inset: no extra bottom gap so the pill sits as low as is safe
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .padding(bottom = 12.dp),
         shape = RoundedCornerShape(28.dp),
         color = barSurface,
         tonalElevation = 2.dp,
