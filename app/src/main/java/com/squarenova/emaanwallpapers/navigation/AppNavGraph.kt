@@ -20,12 +20,16 @@ import com.squarenova.emaanwallpapers.ui.home.HomeScreen
 import com.squarenova.emaanwallpapers.ui.profile.ProfileScreen
 import com.squarenova.emaanwallpapers.ui.reels.ReelsScreen
 import com.squarenova.emaanwallpapers.ui.splash.SplashScreen
-
+import com.squarenova.emaanwallpapers.ui.ringtone.RingtoneScreen
 import com.squarenova.emaanwallpapers.ui.components.FloatingBottomBar
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionScreen
 import com.squarenova.emaanwallpapers.ui.legal.ContactUsScreen
 
-private val bottomNavScreens = listOf("home", "reels")
+private val bottomNavScreens = listOf(
+    "home",
+    "reels",
+    "ringtone"
+)
 
 // Matches floating bar: nav inset + bottom padding + bar row + gap above bar
 private val bottomBarInsetDp = 90.dp
@@ -65,6 +69,9 @@ fun AppNavGraph() {
             composable("subscription") { SubscriptionScreen(navController) }
             composable("home") { HomeScreen(navController) }
             composable("reels") { ReelsScreen(navController) }
+            composable("ringtone") {
+                RingtoneScreen()
+            }
             composable("profile") { ProfileScreen(navController) }
         }
 

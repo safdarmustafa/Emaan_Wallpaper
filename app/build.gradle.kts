@@ -100,6 +100,9 @@ dependencies {
     implementation("com.razorpay:checkout:1.6.41")
     implementation("com.razorpay:standard-core:1.6.56")
 
+    // for setting ringtone
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     // Coil dependency and Mp4 videos
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")
