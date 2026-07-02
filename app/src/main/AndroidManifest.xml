@@ -11,6 +11,9 @@
     <!-- Wallpaper permissions -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
+    <!-- Required to set system ringtone -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+
     <!-- Legacy storage support for older Android versions -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
