@@ -231,6 +231,14 @@ fun SubscriptionScreen(navController: NavController) {
         onRetry: () -> Unit,
     ) {
         PaymentErrors.logFailure("SUBSCRIPTION", raw, throwable, errorCode)
+        Log.d(
+            "SubscriptionDebug",
+            "7. showPaymentError reason=$raw errorCode=$errorCode isMandateStep=$isMandateStep " +
+                "exception=${throwable?.message} classified=${PaymentErrors.classify(raw, throwable, errorCode, isMandateStep)}"
+        )
+        if (throwable != null) {
+            Log.d("SubscriptionDebug", "7. showPaymentError stackTrace=${Log.getStackTraceString(throwable)}")
+        }
         paymentErrorDialog = PaymentErrorDialogState(
             type = PaymentErrors.classify(raw, throwable, errorCode, isMandateStep),
             onRetry = onRetry,
@@ -249,33 +257,6 @@ fun SubscriptionScreen(navController: NavController) {
         }
         return SubscriptionApi.createSubscription(cleanPhone).also { result ->
             result.onSuccess { subId -> pendingSubscriptionId = subId }
-        }
-    }
-
-    fun launchMandateCheckoutViaBackend(
-        phoneForApi: String,
-        onFailure: () -> Unit = { retrySubscription() },
-    ) {
-        scope.launch {
-            isLoading = true
-            obtainSubscriptionIdFromBackend(phoneForApi).fold(
-                onSuccess = { subId ->
-                    hasTrialPaid = true
-                    entryFeeSuccessHandled = true
-                    isLoading = false
-                    openMandateCheckout(subId)
-                },
-                onFailure = { e ->
-                    isLoading = false
-                    showSetupExplanationScreen = true
-                    showPaymentError(
-                        raw = e.message,
-                        throwable = e,
-                        isMandateStep = true,
-                        onRetry = onFailure,
-                    )
-                },
-            )
         }
     }
 
@@ -331,6 +312,33 @@ fun SubscriptionScreen(navController: NavController) {
                 throwable = e,
                 isMandateStep = true,
                 onRetry = { openMandateCheckout(subscriptionId) },
+            )
+        }
+    }
+
+    fun launchMandateCheckoutViaBackend(
+        phoneForApi: String,
+        onFailure: () -> Unit = { retrySubscription() },
+    ) {
+        scope.launch {
+            isLoading = true
+            obtainSubscriptionIdFromBackend(phoneForApi).fold(
+                onSuccess = { subId ->
+                    hasTrialPaid = true
+                    entryFeeSuccessHandled = true
+                    isLoading = false
+                    openMandateCheckout(subId)
+                },
+                onFailure = { e ->
+                    isLoading = false
+                    showSetupExplanationScreen = true
+                    showPaymentError(
+                        raw = e.message,
+                        throwable = e,
+                        isMandateStep = true,
+                        onRetry = onFailure,
+                    )
+                },
             )
         }
     }
@@ -499,6 +507,11 @@ fun SubscriptionScreen(navController: NavController) {
                                 "SUBSCRIPTION",
                                 "PaymentResult.Success phase=$phase result.kind=${result.kind} paymentId=${result.paymentId}"
                             )
+                            Log.d(
+                                "SubscriptionDebug",
+                                "3. SubscriptionScreen PaymentResult.Success phase=$phase " +
+                                    "resultKind=${result.kind} pendingSubscriptionId=$pendingSubscriptionId"
+                            )
 
                             when (phase) {
                             CheckoutKind.ENTRY_FEE -> {
@@ -661,6 +674,10 @@ fun SubscriptionScreen(navController: NavController) {
                                     subId = resolved.getOrThrow()
                                 }
                                 pendingSubscriptionId = subId
+                                Log.d(
+                                    "SubscriptionDebug",
+                                    "3. Entering MANDATE branch subscriptionId=$subId pendingSubscriptionId=$pendingSubscriptionId"
+                                )
                                 MandateDebugLog.note(
                                     "MANDATE PaymentResult.Success — starting verifyMandateWithPolling subId=$subId"
                                 )
@@ -703,6 +720,10 @@ fun SubscriptionScreen(navController: NavController) {
                                                             "SUBSCRIPTION",
                                                             "Mandate OK but no premium entitlement after activate-trial"
                                                         )
+                                                        Log.d(
+                                                            "SubscriptionDebug",
+                                                            "8. FINAL OUTCOME = FAILURE (mandate_not_entitled) — mandate verified + activateTrial OK but hasPremium=false"
+                                                        )
                                                         isLoading = false
                                                         showSetupExplanationScreen = true
                                                         mandatePaymentSuccessReceived = true
@@ -717,6 +738,10 @@ fun SubscriptionScreen(navController: NavController) {
                                                     Log.i(
                                                         "SUBSCRIPTION",
                                                         "Mandate verified status=$status; entitlement granted"
+                                                    )
+                                                    Log.d(
+                                                        "SubscriptionDebug",
+                                                        "8. FINAL OUTCOME = SUCCESS — mandate status=$status entitlement granted, showing success screen"
                                                     )
                                                     isLoading = false
                                                     showSetupExplanationScreen = false
@@ -744,6 +769,10 @@ fun SubscriptionScreen(navController: NavController) {
                                                         "activate-trial after mandate failed",
                                                         e
                                                     )
+                                                    Log.d(
+                                                        "SubscriptionDebug",
+                                                        "8. FINAL OUTCOME = FAILURE (activateTrial failed) error=${e.message}"
+                                                    )
                                                     isLoading = false
                                                     showSetupExplanationScreen = true
                                                     mandatePaymentSuccessReceived = true
@@ -766,6 +795,10 @@ fun SubscriptionScreen(navController: NavController) {
                                             mapOf("error_reason" to (e.message ?: "verification_failed"))
                                         )
                                         Log.e("SUBSCRIPTION", "Mandate verification failed", e)
+                                        Log.d(
+                                            "SubscriptionDebug",
+                                            "8. FINAL OUTCOME = TIMEOUT/FAILURE (verifyMandateWithPolling) error=${e.message}"
+                                        )
                                         showSetupExplanationScreen = true
                                         mandatePaymentSuccessReceived = true
                                         mandateLaunchHandled = false

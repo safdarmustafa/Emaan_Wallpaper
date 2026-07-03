@@ -28,6 +28,11 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
     override fun onPaymentSuccess(razorpayPaymentId: String?) {
         val paymentId = razorpayPaymentId ?: ""
         Log.d("RAZORPAY", "Payment Success: $paymentId")
+        Log.d(
+            "SubscriptionDebug",
+            "1. MainActivity.onPaymentSuccess paymentId=$paymentId " +
+                "pendingCheckoutKind=${SubscriptionManager.peekPersistedCheckoutKind()}"
+        )
         runOnUiThread {
             SubscriptionManager.onPaymentSuccess(paymentId)
         }

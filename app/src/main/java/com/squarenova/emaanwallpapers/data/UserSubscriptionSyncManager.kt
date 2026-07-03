@@ -36,6 +36,11 @@ class UserSubscriptionSyncManager(
 
         return try {
             var row = MandateEntitlementResolver.fetchRow(cleanPhone)
+            Log.d(
+                "SubscriptionDebug",
+                "6. syncUserSubscription fetchedRow=${row != null} status=${row?.subscription_status} " +
+                    "trialEnd=${row?.trial_end} trialPaid=${row?.trial_paid}"
+            )
 
             val initialPremium = SubscriptionEntitlement.hasPremiumAccess(
                 subscriptionStatus = row?.subscription_status,
@@ -52,6 +57,11 @@ class UserSubscriptionSyncManager(
             row = MandateEntitlementResolver.ensureTrialActivatedIfNeeded(cleanPhone, row)
 
             val hasPremium = MandateEntitlementResolver.hasPremium(row)
+            Log.d(
+                "SubscriptionDebug",
+                "6. syncUserSubscription RESULT hasPremium=$hasPremium finalStatus=${row?.subscription_status} " +
+                    "finalTrialEnd=${row?.trial_end} (initialPremium=$initialPremium)"
+            )
 
             MandateDebugLog.syncResult(
                 phone = cleanPhone,

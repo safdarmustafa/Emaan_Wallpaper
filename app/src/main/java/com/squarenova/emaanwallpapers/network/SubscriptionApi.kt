@@ -186,6 +186,7 @@ object SubscriptionApi {
         try {
             MandateDebugLog.activateTrialRequest(phone)
             val json = JSONObject().apply { put("phone", phone) }
+            Log.d("SubscriptionDebug", "5. activateTrial REQUEST body=${json}")
             val request = Request.Builder()
                 .url(functionsBaseUrl() + "activate-trial")
                 .addHeader("Authorization", anonBearer())
@@ -195,16 +196,22 @@ object SubscriptionApi {
 
             val response = client.newCall(request).execute()
             val body = response.body?.string() ?: ""
+            Log.d(
+                "SubscriptionDebug",
+                "5. activateTrial RESPONSE httpCode=${response.code} success=${response.isSuccessful} body=$body"
+            )
 
             if (!response.isSuccessful) {
                 val err = parseEdgeFunctionError(body, "activate-trial").ifBlank { "activateTrial failed" }
                 MandateDebugLog.activateTrialResponse(phone, success = false, trialEnd = null, error = err)
+                Log.d("SubscriptionDebug", "5. activateTrial FAILURE error=$err")
                 return@withRetry Result.failure(Exception(err))
             }
 
             val trialEnd = JSONObject(body).optString("trial_end")
                 .ifBlank { JSONObject(body).optString("current_period_end") }
             MandateDebugLog.activateTrialResponse(phone, success = true, trialEnd = trialEnd, error = null)
+            Log.d("SubscriptionDebug", "5. activateTrial SUCCESS trialEnd=$trialEnd")
             Result.success(trialEnd)
         } catch (e: Exception) {
             MandateDebugLog.activateTrialResponse(phone, success = false, trialEnd = null, error = e.message)
@@ -224,6 +231,10 @@ object SubscriptionApi {
 
             val response = client.newCall(request).execute()
             val body = response.body?.string() ?: ""
+            Log.d(
+                "SubscriptionDebug",
+                "4b. verifyMandate httpCode=${response.code} sub=$subscriptionId body=$body"
+            )
             if (!response.isSuccessful) {
                 return@withRetry Result.failure(
                     Exception(parseEdgeFunctionError(body, "validate-subscription-status").ifBlank { "verifyMandate failed" })
@@ -231,6 +242,7 @@ object SubscriptionApi {
             }
 
             val status = JSONObject(body).optString("razorpay_status")
+            Log.d("SubscriptionDebug", "4b. verifyMandate razorpay_status=$status sub=$subscriptionId")
             if (status == "authenticated" || status == "active") {
                 Result.success(status)
             } else {
@@ -251,14 +263,33 @@ object SubscriptionApi {
         delayMs: Long = 2500L
     ): Result<String> = withContext(Dispatchers.IO) {
         var lastError: Throwable? = null
+        val pollStartMs = System.currentTimeMillis()
+        Log.d(
+            "SubscriptionDebug",
+            "4. verifyMandateWithPolling START sub=$subscriptionId attempts=$attempts delayMs=$delayMs"
+        )
         repeat(attempts) { idx ->
             val attempt = idx + 1
+            val elapsedMs = System.currentTimeMillis() - pollStartMs
             Log.d(TAG, "event=mandate_poll_attempt attempt=$attempt/$attempts sub=$subscriptionId")
+            Log.d(
+                "SubscriptionDebug",
+                "4. verifyMandateWithPolling attempt=$attempt/$attempts elapsedMs=$elapsedMs sub=$subscriptionId"
+            )
             val r = verifyMandate(subscriptionId)
             val rzStatus = r.getOrNull()
             MandateDebugLog.verifyMandatePoll(attempt, attempts, subscriptionId, rzStatus)
+            Log.d(
+                "SubscriptionDebug",
+                "4. verifyMandateWithPolling attempt=$attempt result=${if (r.isSuccess) "success" else "retry/fail"} " +
+                    "razorpayStatus=$rzStatus error=${r.exceptionOrNull()?.message}"
+            )
             if (r.isSuccess) {
                 Log.i(TAG, "event=mandate_poll_success attempt=$attempt sub=$subscriptionId")
+                Log.d(
+                    "SubscriptionDebug",
+                    "4. verifyMandateWithPolling SUCCESS attempt=$attempt totalElapsedMs=${System.currentTimeMillis() - pollStartMs} status=$rzStatus"
+                )
                 MandateDebugLog.verifyMandateResult(subscriptionId, true, rzStatus, null)
                 return@withContext r
             }
@@ -284,6 +315,11 @@ object SubscriptionApi {
             false,
             null,
             lastError?.message ?: "Mandate verification timed out",
+        )
+        Log.d(
+            "SubscriptionDebug",
+            "4. verifyMandateWithPolling TIMEOUT sub=$subscriptionId totalElapsedMs=${System.currentTimeMillis() - pollStartMs} " +
+                "lastError=${lastError?.message}"
         )
         Result.failure(lastError ?: Exception("Mandate verification timed out"))
     }

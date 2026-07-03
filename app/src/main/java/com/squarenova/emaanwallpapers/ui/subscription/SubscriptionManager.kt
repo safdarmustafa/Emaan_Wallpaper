@@ -110,6 +110,11 @@ object SubscriptionManager {
             SecureLog.w(TAG, "Payment success without prepareCheckout — ignoring")
             return
         }
+        android.util.Log.d(
+            "SubscriptionDebug",
+            "2. SubscriptionManager emitting PaymentResult.Success kind=$kind " +
+                "paymentId=${SecureLog.redactId(paymentId)}"
+        )
         scope.launch {
             _paymentResult.emit(PaymentResult.Success(paymentId = paymentId, kind = kind))
         }
@@ -119,6 +124,10 @@ object SubscriptionManager {
         SecureLog.e(TAG, "onPaymentError code=$errorCode")
         val kind = pendingCheckout.getAndSet(CheckoutKind.NONE)
         clearPersistedKind()
+        android.util.Log.d(
+            "SubscriptionDebug",
+            "2. SubscriptionManager emitting PaymentResult.Error code=$errorCode kind=$kind"
+        )
         scope.launch {
             _paymentResult.emit(
                 PaymentResult.Error(
