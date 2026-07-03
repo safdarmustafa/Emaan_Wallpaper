@@ -282,6 +282,39 @@ object SubscriptionApi {
         }
     }
 
+    /**
+     * One-shot authoritative Razorpay status for a subscription (no retry — used at timeout decision
+     * points where added latency is undesirable). Returns the raw razorpay_status
+     * (created / authenticated / active / cancelled / …).
+     */
+    suspend fun subscriptionStatus(subscriptionId: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = JSONObject().apply { put("subscription_id", subscriptionId) }
+                val request = Request.Builder()
+                    .url(functionsBaseUrl() + "validate-subscription-status")
+                    .addHeader("Authorization", anonBearer())
+                    .addHeader("Content-Type", "application/json")
+                    .post(json.toString().toRequestBody(JSON))
+                    .build()
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        Exception(parseEdgeFunctionError(body, "validate-subscription-status").ifBlank { "subscriptionStatus failed" })
+                    )
+                }
+                val status = JSONObject(body).optString("razorpay_status")
+                if (status.isBlank()) {
+                    Result.failure(Exception("No razorpay_status received"))
+                } else {
+                    Result.success(status)
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     suspend fun refreshSubscriptionStatus(phone: String): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val json = JSONObject().apply { put("phone", phone) }

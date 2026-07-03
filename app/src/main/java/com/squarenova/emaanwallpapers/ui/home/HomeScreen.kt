@@ -63,6 +63,7 @@ import com.squarenova.emaanwallpapers.theme.HomeSurfaceStrip
 import com.squarenova.emaanwallpapers.ui.components.CompactTopBar
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.network.WallpaperCatalog
 import com.squarenova.emaanwallpapers.network.WallpaperRow
 import com.squarenova.emaanwallpapers.network.isLiveWallpaper
@@ -239,6 +240,14 @@ fun HomeScreen(navController: NavController) {
             } catch (e: Exception) {
                 Log.e("HOME_ACCESS_REFRESH", e.message ?: "Unknown")
             }
+        }
+
+        // Authoritative, offline-safe entitlement gate. EntitlementRepository.refresh():
+        //  • returns the cached premium value on an inconclusive/offline read (never downgrades), and
+        //  • self-heals an authenticated→trial lag (calls activate-trial),
+        // so a paid user is NEVER wrongly paywalled by a failed server fetch or a transient status.
+        if (!phone.isNullOrEmpty() && EntitlementRepository.refresh(phone)) {
+            return@LaunchedEffect
         }
 
         if (!redirectedToSubscription && !SubscriptionEntitlement.hasPremiumAccess(

@@ -4,11 +4,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const jsonHeaders = { "Content-Type": "application/json" };
 
 /**
- * Statuses safe to return for mandate Checkout.open().
- * ACTIVE is intentionally excluded — Razorpay rejects Checkout for subscriptions that are
- * already active/authenticated with a live mandate ("The id provided does not exist").
+ * Statuses that already carry a LIVE mandate and must NEVER be reopened in Razorpay Checkout —
+ * Checkout rejects them with "The id provided does not exist". These ids are still returned so the
+ * client can confirm entitlement, but with checkout_required=false.
+ *   authenticated → mandate approved, trial not yet activated (client calls activate-trial)
+ *   active        → subscription live (user already premium)
+ *   pending       → live subscription whose latest charge is retrying (do NOT re-mandate)
  */
-const REUSABLE_STATUSES = new Set(["created", "authenticated"]);
+const NON_CHECKOUT_LIVE_STATUSES = new Set(["authenticated", "active", "pending"]);
 
 /** Terminal Razorpay statuses — always mint a fresh subscription instead of reusing. */
 const TERMINAL_STATUSES = new Set(["cancelled", "completed", "expired", "halted"]);
@@ -155,17 +158,18 @@ serve(async (req) => {
         key_mode: keyMode(keyId),
         http_status: rzLookup.httpStatus,
         result: rzLookup.ok
-          ? { status: rzLookup.status, reusable: REUSABLE_STATUSES.has(rzLookup.status) }
+          ? { status: rzLookup.status, checkoutable: rzLookup.status === "created" }
           : { error: rzLookup.error },
       });
 
       if (rzLookup.ok) {
         const rzStatus = rzLookup.status;
 
-        // Subscription is already live at Razorpay — never send this id back for Checkout.open().
-        // The client must refresh entitlement instead of reopening mandate checkout.
-        if (rzStatus === "active") {
-          log("subscription_already_active_no_checkout", {
+        // Already has a live mandate (authenticated/active/pending) — reuse the id but NEVER reopen
+        // Checkout (Razorpay would reject: "The id provided does not exist"). The client confirms
+        // entitlement instead of launching mandate checkout again.
+        if (NON_CHECKOUT_LIVE_STATUSES.has(rzStatus)) {
+          log("subscription_live_no_checkout", {
             phone,
             subscription_id: existingSubId,
             razorpay_status: rzStatus,
@@ -174,15 +178,16 @@ serve(async (req) => {
             JSON.stringify({
               subscription_id: existingSubId,
               reused: true,
-              already_active: true,
               checkout_required: false,
+              already_active: rzStatus === "active",
               razorpay_status: rzStatus,
             }),
             { status: 200, headers: jsonHeaders },
           );
         }
 
-        if (REUSABLE_STATUSES.has(rzStatus)) {
+        // Only a freshly created subscription (mandate not yet approved) may be reopened in Checkout.
+        if (rzStatus === "created") {
           log("subscription_reused", {
             phone,
             subscription_id: existingSubId,

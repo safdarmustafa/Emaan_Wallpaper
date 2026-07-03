@@ -38,10 +38,20 @@ sealed interface SubscriptionState {
     data class Premium(val subscriptionStatus: String?) : SubscriptionState
 
     /**
-     * The active foreground confirmation budget elapsed while Razorpay was still non-terminal.
+     * The active foreground confirmation budget elapsed while Razorpay was still non-terminal
+     * AND the mandate was already authenticated/active (entitlement is merely propagating).
      * This is NOT a failure: the durable ticket is retained and recovery keeps confirming.
      */
     data class SoftTimeout(val subscriptionId: String) : SubscriptionState
+
+    /**
+     * The ₹5 trial payment succeeded and a subscription exists, but the AutoPay mandate was never
+     * completed — Razorpay status is still pre-activation (created). The user exited/cancelled the
+     * mandate checkout. This is NOT a failure and NOT an endless "confirming": the durable ticket is
+     * retained (survives restart) and the UI offers a single "Complete AutoPay Setup" action that
+     * resumes THIS subscription's mandate checkout (never re-charging ₹5).
+     */
+    data class MandatePending(val subscriptionId: String) : SubscriptionState
 
     /** Razorpay reported a terminal/negative state (cancelled/halted/completed/expired) or the
      *  payment itself failed. This is the only genuine failure. */

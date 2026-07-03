@@ -173,6 +173,9 @@ fun SubscriptionScreen(navController: NavController) {
     /** Confirmation is taking longer than usual but is still running in the background. */
     var confirmingSoft by remember { mutableStateOf(false) }
 
+    /** ₹5 paid but AutoPay mandate never completed — offer to finish it (no re-charge). */
+    var showMandatePending by remember { mutableStateOf(false) }
+
     /** Observable V2 confirmation state machine (survives rotation/background/process death). */
     val subState by SubscriptionOrchestrator.state.collectAsState()
 
@@ -297,26 +300,29 @@ fun SubscriptionScreen(navController: NavController) {
     }
 
     /**
-     * When create-subscription reports the mandate is already live at Razorpay, never open Checkout
-     * again — refresh entitlement / resume durable confirmation instead.
+     * Called when create-subscription reports the subscription already has a LIVE mandate
+     * (authenticated/active/pending → checkout_required=false). Opening Checkout again would fail
+     * ("The id provided does not exist"), so we resolve via the entitlement source of truth and, if
+     * not yet premium, hand off to the durable orchestrator confirmation. NEVER opens Checkout.
+     * Always "handles" (returns true) so callers never fall through to a doomed mandate checkout.
      */
-    suspend fun handleAlreadyActiveMandate(phoneForApi: String): Boolean {
-        val mandateOk = SubscriptionApi.refreshSubscriptionStatus(phoneForApi).getOrDefault(false)
+    suspend fun handleAlreadyActiveMandate(phoneForApi: String, subscriptionId: String): Boolean {
+        isLoading = false
+        showSetupExplanationScreen = false
         val premium = EntitlementRepository.refresh(phoneForApi)
         if (premium) {
-            isLoading = false
-            showSetupExplanationScreen = false
             showTrialSuccessScreen = true
-            return true
-        }
-        if (mandateOk) {
-            isLoading = false
-            showSetupExplanationScreen = false
+        } else {
+            // Not premium yet (e.g. authenticated→trial lag, or a pending renewal). Drive
+            // verify → activate → sync through the single-flight orchestrator (idempotent).
             confirming = true
-            SubscriptionOrchestrator.recover()
-            return true
+            SubscriptionOrchestrator.onMandatePaymentSuccess(
+                phone = phoneForApi,
+                subscriptionId = subscriptionId,
+                paymentId = "",
+            )
         }
-        return false
+        return true
     }
 
     val retrySubscriptionHolder = remember { object { lateinit var action: () -> Unit } }
@@ -392,7 +398,8 @@ fun SubscriptionScreen(navController: NavController) {
             obtainSubscriptionIdFromBackend(phoneForApi).fold(
                 onSuccess = { created ->
                     if (!created.checkoutRequired || created.alreadyActive) {
-                        if (handleAlreadyActiveMandate(phoneForApi)) return@launch
+                        handleAlreadyActiveMandate(phoneForApi, created.subscriptionId)
+                        return@launch
                     }
                     hasTrialPaid = true
                     entryFeeSuccessHandled = true
@@ -767,7 +774,8 @@ fun SubscriptionScreen(navController: NavController) {
                                     }
                                     val created = resolved.getOrThrow()
                                     if (!created.checkoutRequired || created.alreadyActive) {
-                                        if (handleAlreadyActiveMandate(phoneForApi)) return@launch
+                                        handleAlreadyActiveMandate(phoneForApi, created.subscriptionId)
+                                        return@launch
                                     }
                                     subId = created.subscriptionId
                                 }
@@ -866,6 +874,7 @@ fun SubscriptionScreen(navController: NavController) {
             is SubscriptionState.Confirming -> {
                 confirming = true
                 confirmingSoft = false
+                showMandatePending = false
                 isLoading = false
                 showSetupExplanationScreen = false
                 showTrialSuccessScreen = false
@@ -876,6 +885,7 @@ fun SubscriptionScreen(navController: NavController) {
             is SubscriptionState.Premium -> {
                 confirming = false
                 confirmingSoft = false
+                showMandatePending = false
                 isLoading = false
                 showSetupExplanationScreen = false
                 currentCheckoutKind = CheckoutKind.NONE
@@ -894,14 +904,33 @@ fun SubscriptionScreen(navController: NavController) {
                 // We must NOT surface a retry that reopens Razorpay while it runs (duplicate risk).
                 confirming = true
                 confirmingSoft = true
+                showMandatePending = false
                 isLoading = false
                 showSetupExplanationScreen = false
                 paymentErrorDialog = null
             }
 
+            is SubscriptionState.MandatePending -> {
+                // ₹5 paid, subscription created, but AutoPay mandate never completed. Not a failure.
+                // Retain the durable ticket (survives restart); offer a single resume action.
+                confirming = false
+                confirmingSoft = false
+                showMandatePending = true
+                isLoading = false
+                showSetupExplanationScreen = false
+                showTrialSuccessScreen = false
+                paymentErrorDialog = null
+                hasTrialPaid = true
+                mandatePaymentSuccessReceived = false
+                mandateLaunchHandled = false
+                pendingSubscriptionId = s.subscriptionId
+                // Deliberately do NOT reset() — the ticket must persist for restart recovery.
+            }
+
             is SubscriptionState.TerminalFailure -> {
                 confirming = false
                 confirmingSoft = false
+                showMandatePending = false
                 isLoading = false
                 showSetupExplanationScreen = true
                 mandatePaymentSuccessReceived = true
@@ -918,6 +947,7 @@ fun SubscriptionScreen(navController: NavController) {
             SubscriptionState.Idle -> {
                 confirming = false
                 confirmingSoft = false
+                showMandatePending = false
             }
         }
     }
@@ -1109,7 +1139,8 @@ fun SubscriptionScreen(navController: NavController) {
                     obtainSubscriptionIdFromBackend(phoneForApi).fold(
                         onSuccess = { created ->
                             if (!created.checkoutRequired || created.alreadyActive) {
-                                if (handleAlreadyActiveMandate(phoneForApi)) return@launch
+                                handleAlreadyActiveMandate(phoneForApi, created.subscriptionId)
+                                return@launch
                             }
                             isLoading = false
                             openMandateCheckout(created.subscriptionId)
@@ -1166,6 +1197,27 @@ fun SubscriptionScreen(navController: NavController) {
                 // Let the user browse the paywall; the durable job + recovery keep confirming and
                 // will surface success automatically once entitlement lands.
                 confirming = false
+            },
+        )
+
+        MandatePendingOverlay(
+            visible = showMandatePending,
+            loading = isLoading,
+            onCompleteSetup = {
+                val phoneForApi = phone.trim()
+                if (phoneForApi.isBlank()) {
+                    showMandatePending = false
+                    showPaymentError(
+                        raw = "session_expired",
+                        onRetry = { navigateBackToLogin() },
+                    )
+                    return@MandatePendingOverlay
+                }
+                showMandatePending = false
+                AnalyticsManager.track("mandate_pending_resume_clicked")
+                // Resumes THIS subscription (create-subscription reuses created/authenticated) and
+                // opens ONLY the mandate checkout — never re-charges ₹5.
+                launchMandateCheckoutViaBackend(phoneForApi)
             },
         )
 
@@ -1228,6 +1280,77 @@ private fun SubscriptionConfirmingOverlay(
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Shown when the ₹5 trial payment succeeded but the AutoPay mandate was never completed (the user
+ * exited/cancelled the mandate checkout). This is a clear resolvable state — not a failure and not
+ * an endless "confirming". A single action resumes the SAME subscription's mandate checkout; ₹5 is
+ * never charged again. The durable ticket keeps this state alive across restarts.
+ */
+@Composable
+private fun MandatePendingOverlay(
+    visible: Boolean,
+    loading: Boolean,
+    onCompleteSetup: () -> Unit,
+) {
+    if (!visible) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF2000000)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = PremiumSubscriptionColors.SurfaceElevated,
+            tonalElevation = 0.dp,
+            shadowElevation = 16.dp,
+            border = BorderStroke(1.dp, PremiumSubscriptionColors.Gold.copy(alpha = 0.3f)),
+        ) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(text = "✅", fontSize = 34.sp)
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = "Trial payment received",
+                    color = PremiumSubscriptionColors.TextPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Your ₹5 payment succeeded, but AutoPay setup wasn’t finished. " +
+                        "Complete it now to activate your 3-day trial and premium access.",
+                    color = PremiumSubscriptionColors.TextSecondary,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "You won’t be charged ₹5 again.",
+                    color = PremiumSubscriptionColors.Gold.copy(alpha = 0.95f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(24.dp))
+                PremiumGradientCtaButton(
+                    text = "Complete AutoPay Setup",
+                    onClick = onCompleteSetup,
+                    enabled = !loading,
+                    loading = loading,
+                )
             }
         }
     }

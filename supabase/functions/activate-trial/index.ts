@@ -42,7 +42,7 @@ serve(async (req) => {
 
     const { data: row, error: fetchErr } = await supabase
       .from("users")
-      .select("razorpay_subscription_id, subscription_status")
+      .select("razorpay_subscription_id, subscription_status, trial_end")
       .eq("phone_number", phone)
       .maybeSingle();
 
@@ -113,7 +113,16 @@ serve(async (req) => {
       );
     }
 
-    const trialEnd = new Date(Date.now() + TRIAL_MS).toISOString();
+    // Idempotency: preserve an existing FUTURE trial_end so repeated activate-trial calls (retry,
+    // read-after-write lag, recovery) never extend the trial window. Only mint a new window when
+    // none exists or the prior one has already elapsed.
+    const existingTrialEnd = typeof row.trial_end === "string" ? row.trial_end : "";
+    const existingTrialMs = Date.parse(existingTrialEnd);
+    const hasFutureTrial =
+      existingTrialEnd !== "" && !Number.isNaN(existingTrialMs) && existingTrialMs > Date.now();
+    const trialEnd = hasFutureTrial
+      ? existingTrialEnd
+      : new Date(Date.now() + TRIAL_MS).toISOString();
 
     const patch =
       status === "active"

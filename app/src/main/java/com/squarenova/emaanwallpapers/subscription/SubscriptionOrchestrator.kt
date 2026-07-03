@@ -236,6 +236,16 @@ object SubscriptionOrchestrator {
             return
         }
 
+        // Recovered/aged ticket whose mandate was never approved → surface MandatePending
+        // immediately instead of spinning for a full active budget. Fresh tickets skip this
+        // (right after the user approves the mandate, Razorpay may still be eventually-consistent).
+        val ageMs = System.currentTimeMillis() - initial.createdAtMs
+        if (!initial.mandateVerified && ageMs > MAX_ACTIVE_MS && isMandateIncomplete(subId)) {
+            SecureLog.i(TAG, "recover: mandate still incomplete (created) — MandatePending sub=${SecureLog.redactId(subId)}")
+            _state.value = SubscriptionState.MandatePending(subId)
+            return
+        }
+
         var verified = initial.mandateVerified
         var attempt = initial.attempt
         var backoff = BACKOFF_START_MS
@@ -246,15 +256,27 @@ object SubscriptionOrchestrator {
             val elapsed = System.currentTimeMillis() - startMs
             if (elapsed >= HARD_CAP_MS) {
                 // Stop working this run; keep the ticket. Foreground/restart recovery resumes it.
+                if (!verified && isMandateIncomplete(subId)) {
+                    SecureLog.i(TAG, "hard cap — mandate incomplete (created) — MandatePending sub=${SecureLog.redactId(subId)}")
+                    _state.value = SubscriptionState.MandatePending(subId)
+                    return
+                }
                 SecureLog.i(TAG, "hard cap reached — ticket retained for recovery sub=${SecureLog.redactId(subId)}")
                 _state.value = SubscriptionState.SoftTimeout(subId)
                 return
             }
 
-            // Past the active window we soften the UI to SoftTimeout but keep confirming (slower).
+            // Past the active window we soften the UI. If the mandate was never approved (still
+            // "created"), the user abandoned AutoPay — stop polling and offer to complete it.
+            // Otherwise it's genuinely propagating, so we keep confirming (slower cadence).
             val extended = elapsed >= MAX_ACTIVE_MS
             if (extended && !softAnnounced) {
                 softAnnounced = true
+                if (!verified && isMandateIncomplete(subId)) {
+                    SecureLog.i(TAG, "active budget elapsed — mandate incomplete (created) — MandatePending sub=${SecureLog.redactId(subId)}")
+                    _state.value = SubscriptionState.MandatePending(subId)
+                    return
+                }
                 SecureLog.i(TAG, "active budget elapsed — soft timeout (still confirming) sub=${SecureLog.redactId(subId)}")
                 _state.value = SubscriptionState.SoftTimeout(subId)
             }
@@ -326,6 +348,15 @@ object SubscriptionOrchestrator {
 
     private fun isTerminal(message: String): Boolean =
         "cancelled" in message || "halted" in message || "completed" in message || "expired" in message
+
+    /**
+     * True when the subscription exists at Razorpay but the mandate was never approved (status is
+     * still "created"). Distinguishes an abandoned AutoPay setup from genuine entitlement lag.
+     * A network/read failure returns false so we fall back to the (still-confirming) SoftTimeout —
+     * never wrongly telling a user who completed the mandate that setup is incomplete.
+     */
+    private suspend fun isMandateIncomplete(subId: String): Boolean =
+        SubscriptionApi.subscriptionStatus(subId).getOrNull()?.trim()?.lowercase() == "created"
 
     private suspend fun currentPhone(): String = try {
         val ctx = appContext ?: return ""
