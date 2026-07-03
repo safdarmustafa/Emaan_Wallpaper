@@ -70,6 +70,7 @@ import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.AccountDeletionApi
+import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import com.squarenova.emaanwallpapers.network.OtpApi
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -494,6 +495,7 @@ fun ProfileScreen(navController: NavController) {
                                 val result = AccountDeletionApi.deleteUserData(phone, deleteOtp)
                                 if (result.isSuccess) {
                                     AnalyticsManager.reset()
+                                    SubscriptionOrchestrator.onLogout()
                                     dataStoreManager.logout()
                                     showDeleteDialog = false
                                     deleteOtp = ""
@@ -697,6 +699,7 @@ fun ProfileScreen(navController: NavController) {
                     AnalyticsManager.trackEvent("Profile - Logout Tapped")
                     scope.launch {
                         AnalyticsManager.reset()
+                        SubscriptionOrchestrator.onLogout()
                         dataStoreManager.logout()
                         navController.navigate("login") { popUpTo("home") { inclusive = true } }
                     }

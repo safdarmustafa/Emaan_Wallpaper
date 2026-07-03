@@ -3,32 +3,63 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
-/** Statuses that may be returned to the client for mandate / checkout reuse. */
-const REUSABLE_STATUSES = new Set(["created", "authenticated", "active"]);
+/**
+ * Statuses safe to return for mandate Checkout.open().
+ * ACTIVE is intentionally excluded — Razorpay rejects Checkout for subscriptions that are
+ * already active/authenticated with a live mandate ("The id provided does not exist").
+ */
+const REUSABLE_STATUSES = new Set(["created", "authenticated"]);
 
 /** Terminal Razorpay statuses — always mint a fresh subscription instead of reusing. */
 const TERMINAL_STATUSES = new Set(["cancelled", "completed", "expired", "halted"]);
 
+const clog = (step: string, meta: Record<string, unknown> = {}) =>
+  console.log(JSON.stringify({ fn: "create-subscription", step, ...meta }));
+
+/** Never logs the secret. Key IDs are public (shipped in the APK), so masking is belt-and-suspenders. */
+const maskKeyId = (k?: string | null) =>
+  !k ? "null" : k.length <= 12 ? "****" : `${k.slice(0, 12)}…${k.slice(-4)}`;
+
+/** Derives test/live purely from the key-id prefix — the crux of "id does not exist" diagnosis. */
+const keyMode = (k?: string | null) =>
+  !k
+    ? "unknown"
+    : k.startsWith("rzp_live_")
+      ? "live"
+      : k.startsWith("rzp_test_")
+        ? "test"
+        : "unknown";
+
 async function fetchRazorpaySubscriptionStatus(
   subId: string,
   auth: string,
-): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; status: string; httpStatus: number }
+  | { ok: false; error: string; httpStatus: number }
+> {
   const rz = await fetch(`https://api.razorpay.com/v1/subscriptions/${subId}`, {
     headers: { Authorization: `Basic ${auth}` },
   });
   const rzData = await rz.json();
+  // TEMP DIAGNOSTIC: full GET response (no secrets — rzData is the subscription/error object).
+  clog("razorpay_lookup_response", {
+    subscription_id: subId,
+    http_status: rz.status,
+    ok: rz.ok,
+    response: rzData,
+  });
   if (!rz.ok) {
     const msg =
       rzData?.error?.description ||
       rzData?.error?.message ||
       JSON.stringify(rzData);
-    return { ok: false, error: msg };
+    return { ok: false, error: msg, httpStatus: rz.status };
   }
   const status = typeof rzData?.status === "string" ? rzData.status.trim().toLowerCase() : "";
   if (!status) {
-    return { ok: false, error: "No status in Razorpay subscription response" };
+    return { ok: false, error: "No status in Razorpay subscription response", httpStatus: rz.status };
   }
-  return { ok: true, status };
+  return { ok: true, status, httpStatus: rz.status };
 }
 
 serve(async (req) => {
@@ -75,6 +106,15 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceKey);
     const auth = btoa(`${keyId}:${keySecret}`);
 
+    // TEMP DIAGNOSTIC: which Razorpay account/mode is the BACKEND operating in? A subscription is
+    // only visible to the same key (account + test/live) that created it. If this mode differs from
+    // the Android client's BuildConfig RAZORPAY_KEY_ID, Checkout raises "The id provided does not exist".
+    clog("razorpay_env", {
+      key_mode: keyMode(keyId),
+      key_id_masked: maskKeyId(keyId),
+      plan_id: planId,
+    });
+
     const { data: row, error: userErr } = await supabase
       .from("users")
       .select("trial_paid, trial_end, razorpay_subscription_id")
@@ -108,8 +148,39 @@ serve(async (req) => {
     if (existingSubId) {
       const rzLookup = await fetchRazorpaySubscriptionStatus(existingSubId, auth);
 
+      // TEMP DIAGNOSTIC: is the returned id coming from DB reuse, and does it still exist on THIS key?
+      clog("reuse_lookup", {
+        phone,
+        existing_subscription_id: existingSubId,
+        key_mode: keyMode(keyId),
+        http_status: rzLookup.httpStatus,
+        result: rzLookup.ok
+          ? { status: rzLookup.status, reusable: REUSABLE_STATUSES.has(rzLookup.status) }
+          : { error: rzLookup.error },
+      });
+
       if (rzLookup.ok) {
         const rzStatus = rzLookup.status;
+
+        // Subscription is already live at Razorpay — never send this id back for Checkout.open().
+        // The client must refresh entitlement instead of reopening mandate checkout.
+        if (rzStatus === "active") {
+          log("subscription_already_active_no_checkout", {
+            phone,
+            subscription_id: existingSubId,
+            razorpay_status: rzStatus,
+          });
+          return new Response(
+            JSON.stringify({
+              subscription_id: existingSubId,
+              reused: true,
+              already_active: true,
+              checkout_required: false,
+              razorpay_status: rzStatus,
+            }),
+            { status: 200, headers: jsonHeaders },
+          );
+        }
 
         if (REUSABLE_STATUSES.has(rzStatus)) {
           log("subscription_reused", {
@@ -118,7 +189,12 @@ serve(async (req) => {
             razorpay_status: rzStatus,
           });
           return new Response(
-            JSON.stringify({ subscription_id: existingSubId, reused: true }),
+            JSON.stringify({
+              subscription_id: existingSubId,
+              reused: true,
+              checkout_required: true,
+              razorpay_status: rzStatus,
+            }),
             { status: 200, headers: jsonHeaders },
           );
         }
@@ -157,22 +233,38 @@ serve(async (req) => {
     }
 
     const startAtUnix = Math.max(Math.floor(trialEndMs / 1000), Math.floor(Date.now() / 1000) + 60);
+    const createRequestBody = {
+      plan_id: planId,
+      total_count: 120,
+      customer_notify: 1,
+      start_at: startAtUnix,
+      notes: { phone, source: "emaan_wallpapers_app" },
+    };
+
+    // TEMP DIAGNOSTIC: full create request (no secrets) + which mode it is being created under.
+    clog("razorpay_create_request", {
+      key_mode: keyMode(keyId),
+      key_id_masked: maskKeyId(keyId),
+      request: createRequestBody,
+    });
+
     const rz = await fetch("https://api.razorpay.com/v1/subscriptions", {
       method: "POST",
       headers: {
         Authorization: `Basic ${auth}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        plan_id: planId,
-        total_count: 120,
-        customer_notify: 1,
-        start_at: startAtUnix,
-        notes: { phone, source: "emaan_wallpapers_app" },
-      }),
+      body: JSON.stringify(createRequestBody),
     });
 
     const rzData = await rz.json();
+    // TEMP DIAGNOSTIC: full create response. rzData holds the new subscription (id/status/plan_id) or
+    // the Razorpay error — no secrets. Compare rzData.id's mode against the client's checkout key.
+    clog("razorpay_create_response", {
+      http_status: rz.status,
+      ok: rz.ok,
+      response: rzData,
+    });
     if (!rz.ok) {
       const msg =
         rzData?.error?.description ||

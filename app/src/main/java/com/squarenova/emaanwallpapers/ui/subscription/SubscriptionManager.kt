@@ -65,6 +65,16 @@ object SubscriptionManager {
     fun peekPersistedCheckoutKind(): CheckoutKind = readPersistedKind()
 
     /**
+     * Clears the in-memory + persisted pending checkout. Called by the orchestrator once a
+     * confirmation reconstructed from persistence reaches a terminal state, so recovery does not
+     * re-trigger on every foreground.
+     */
+    fun clearPendingCheckout() {
+        pendingCheckout.set(CheckoutKind.NONE)
+        clearPersistedKind()
+    }
+
+    /**
      * After process death, in-memory [pendingCheckout] is [CheckoutKind.NONE] but disk may still
      * hold ENTRY_FEE or MANDATE. Call on [Lifecycle.Event.ON_RESUME] before relying on phase state.
      */

@@ -10,6 +10,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.ktx.Firebase
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionManager
 import coil.Coil
 import coil.ImageLoader
@@ -49,6 +50,15 @@ class App : Application() {
         SubscriptionManager.init(this)
 
         // =========================
+        // Subscription System V2 — orchestrator + entitlement source of truth.
+        // Kick automatic recovery immediately in case a confirmation was interrupted by
+        // process death / reboot while the app was closed.
+        // =========================
+
+        SubscriptionOrchestrator.init(this)
+        SubscriptionOrchestrator.recover()
+
+        // =========================
         // Analytics
         // =========================
 
@@ -65,9 +75,15 @@ class App : Application() {
             // Analytics must never block or crash app startup.
         }
 
-        // Flush analytics when app goes background
+        // Flush analytics when app goes background; resume subscription recovery when it returns.
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
+
+                override fun onStart(owner: LifecycleOwner) {
+                    // Foreground (incl. return from UPI app / internet reconnect): resume any
+                    // pending confirmation. No-op if nothing is pending or one is already running.
+                    SubscriptionOrchestrator.recover()
+                }
 
                 override fun onStop(owner: LifecycleOwner) {
                     try {

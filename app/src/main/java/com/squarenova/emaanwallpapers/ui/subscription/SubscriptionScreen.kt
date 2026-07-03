@@ -24,16 +24,17 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,12 +56,12 @@ import androidx.navigation.NavController
 import com.razorpay.Checkout
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.data.MandateDebugLog
-import com.squarenova.emaanwallpapers.data.MandateEntitlementResolver
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
-import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
+import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
+import com.squarenova.emaanwallpapers.subscription.SubscriptionState
 import com.squarenova.emaanwallpapers.ui.legal.LegalUrlOpener
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
@@ -70,6 +71,38 @@ import com.squarenova.emaanwallpapers.BuildConfig
 import io.github.jan.supabase.postgrest.postgrest
 import org.json.JSONObject
 import kotlinx.serialization.Serializable
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Process-wide guard: at most one Razorpay Checkout window at a time. */
+private val checkoutOpenInFlight = AtomicBoolean(false)
+
+private fun logCheckoutForensic(
+    action: String,
+    kind: CheckoutKind,
+    subscriptionId: String? = null,
+    orderId: String? = null,
+) {
+    Log.d(
+        "CheckoutForensic",
+        "action=$action kind=$kind subId=$subscriptionId orderId=$orderId " +
+            "inFlight=${checkoutOpenInFlight.get()} ts=${System.currentTimeMillis()} " +
+            "thread=${Thread.currentThread().name}\n${Log.getStackTraceString(Throwable())}",
+    )
+}
+
+private fun tryAcquireCheckoutFlight(action: String, kind: CheckoutKind): Boolean {
+    val acquired = checkoutOpenInFlight.compareAndSet(false, true)
+    logCheckoutForensic(
+        if (acquired) "acquire:$action" else "BLOCKED_duplicate:$action",
+        kind,
+    )
+    return acquired
+}
+
+private fun releaseCheckoutFlight(reason: String) {
+    checkoutOpenInFlight.set(false)
+    logCheckoutForensic("release:$reason", CheckoutKind.NONE)
+}
 
 object RazorpayConfig {
     /** Set RAZORPAY_KEY_ID in local.properties (use test keys for debug builds if you split by flavor later). */
@@ -115,8 +148,6 @@ fun SubscriptionScreen(navController: NavController) {
 
     var phone by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var bannerMessage by remember { mutableStateOf<String?>(null) }
-    var bannerIsSuccess by remember { mutableStateOf(true) }
     var paymentErrorDialog by remember { mutableStateOf<PaymentErrorDialogState?>(null) }
 
     var currentCheckoutKind by remember { mutableStateOf(CheckoutKind.NONE) }
@@ -135,6 +166,15 @@ fun SubscriptionScreen(navController: NavController) {
 
     /** Post–mandate success; user taps Continue → Home. */
     var showTrialSuccessScreen by remember { mutableStateOf(false) }
+
+    /** Durable confirmation is running (orchestrator owns verify → activate → sync). */
+    var confirming by remember { mutableStateOf(false) }
+
+    /** Confirmation is taking longer than usual but is still running in the background. */
+    var confirmingSoft by remember { mutableStateOf(false) }
+
+    /** Observable V2 confirmation state machine (survives rotation/background/process death). */
+    val subState by SubscriptionOrchestrator.state.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -192,6 +232,8 @@ fun SubscriptionScreen(navController: NavController) {
             currentCheckoutKind = initialKind
             Log.d("SUBSCRIPTION", "Restored checkout kind on screen enter: $initialKind")
         }
+        // Resume any interrupted confirmation (process death / kill during mandate). No-op otherwise.
+        SubscriptionOrchestrator.recover()
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -209,12 +251,6 @@ fun SubscriptionScreen(navController: NavController) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(bannerMessage) {
-        if (bannerMessage != null) {
-            delay(2500)
-            bannerMessage = null
-        }
-    }
     LaunchedEffect(mandateRetryCooldownUntilMs) {
         while (mandateRetryCooldownUntilMs > 0L && System.currentTimeMillis() < mandateRetryCooldownUntilMs) {
             retryNowMs = System.currentTimeMillis()
@@ -250,14 +286,37 @@ fun SubscriptionScreen(navController: NavController) {
      * Single client entry point for obtaining a mandate-ready subscription id.
      * Always delegates reuse vs. create-new to the create-subscription edge function.
      */
-    suspend fun obtainSubscriptionIdFromBackend(phoneForApi: String): Result<String> {
+    suspend fun obtainSubscriptionIdFromBackend(phoneForApi: String): Result<SubscriptionApi.CreateSubscriptionResult> {
         val cleanPhone = phoneForApi.trim()
         if (cleanPhone.isBlank()) {
             return Result.failure(IllegalStateException("session_expired"))
         }
         return SubscriptionApi.createSubscription(cleanPhone).also { result ->
-            result.onSuccess { subId -> pendingSubscriptionId = subId }
+            result.onSuccess { created -> pendingSubscriptionId = created.subscriptionId }
         }
+    }
+
+    /**
+     * When create-subscription reports the mandate is already live at Razorpay, never open Checkout
+     * again — refresh entitlement / resume durable confirmation instead.
+     */
+    suspend fun handleAlreadyActiveMandate(phoneForApi: String): Boolean {
+        val mandateOk = SubscriptionApi.refreshSubscriptionStatus(phoneForApi).getOrDefault(false)
+        val premium = EntitlementRepository.refresh(phoneForApi)
+        if (premium) {
+            isLoading = false
+            showSetupExplanationScreen = false
+            showTrialSuccessScreen = true
+            return true
+        }
+        if (mandateOk) {
+            isLoading = false
+            showSetupExplanationScreen = false
+            confirming = true
+            SubscriptionOrchestrator.recover()
+            return true
+        }
+        return false
     }
 
     val retrySubscriptionHolder = remember { object { lateinit var action: () -> Unit } }
@@ -267,6 +326,7 @@ fun SubscriptionScreen(navController: NavController) {
         scope.launch {
             showSetupExplanationScreen = false
             showTrialSuccessScreen = false
+            SubscriptionOrchestrator.onLogout()
             dataStoreManager.logout()
             navController.navigate("login") {
                 popUpTo("subscription") { inclusive = true }
@@ -276,8 +336,13 @@ fun SubscriptionScreen(navController: NavController) {
     }
 
     fun openMandateCheckout(subscriptionId: String) {
+        if (!tryAcquireCheckoutFlight("openMandateCheckout", CheckoutKind.MANDATE)) {
+            Log.w("SUBSCRIPTION", "openMandateCheckout ignored — checkout already in flight")
+            return
+        }
         val hostActivity = activity
         if (hostActivity == null) {
+            releaseCheckoutFlight("openMandateCheckout_activity_null")
             showPaymentError(
                 raw = "activity_null",
                 isMandateStep = true,
@@ -291,6 +356,7 @@ fun SubscriptionScreen(navController: NavController) {
         currentCheckoutKind = CheckoutKind.MANDATE
         SubscriptionManager.prepareCheckout(CheckoutKind.MANDATE)
         isLoading = false
+        logCheckoutForensic("Checkout.open", CheckoutKind.MANDATE, subscriptionId = subscriptionId)
         Log.i("SUBSCRIPTION", "Opening mandate checkout subscriptionId=$subscriptionId")
         try {
             val checkout = Checkout()
@@ -304,6 +370,7 @@ fun SubscriptionScreen(navController: NavController) {
             }
             checkout.open(hostActivity, options)
         } catch (e: Exception) {
+            releaseCheckoutFlight("openMandateCheckout_exception")
             Log.e("SUBSCRIPTION", "openMandateCheckout", e)
             currentCheckoutKind = CheckoutKind.NONE
             showSetupExplanationScreen = true
@@ -323,11 +390,14 @@ fun SubscriptionScreen(navController: NavController) {
         scope.launch {
             isLoading = true
             obtainSubscriptionIdFromBackend(phoneForApi).fold(
-                onSuccess = { subId ->
+                onSuccess = { created ->
+                    if (!created.checkoutRequired || created.alreadyActive) {
+                        if (handleAlreadyActiveMandate(phoneForApi)) return@launch
+                    }
                     hasTrialPaid = true
                     entryFeeSuccessHandled = true
                     isLoading = false
-                    openMandateCheckout(subId)
+                    openMandateCheckout(created.subscriptionId)
                 },
                 onFailure = { e ->
                     isLoading = false
@@ -344,6 +414,12 @@ fun SubscriptionScreen(navController: NavController) {
     }
 
     fun startCheckout() {
+        // Never launch a checkout while a confirmation is in flight — re-show the overlay instead.
+        if (subState is SubscriptionState.Confirming || subState is SubscriptionState.SoftTimeout) {
+            confirming = true
+            Log.w("SUBSCRIPTION", "startCheckout ignored — confirmation active")
+            return
+        }
         if (phone.isBlank()) {
             showPaymentError(
                 raw = "session_expired",
@@ -384,6 +460,11 @@ fun SubscriptionScreen(navController: NavController) {
             val orderResult = SubscriptionApi.createOrder()
             orderResult.fold(
                 onSuccess = { orderId ->
+                    if (!tryAcquireCheckoutFlight("startCheckout_entry_fee", CheckoutKind.ENTRY_FEE)) {
+                        isLoading = false
+                        Log.w("SUBSCRIPTION", "startCheckout ignored — checkout already in flight")
+                        return@fold
+                    }
                     AnalyticsManager.track(
                         "payment_initiated",
                         mapOf("amount" to 5, "currency" to "INR")
@@ -402,8 +483,10 @@ fun SubscriptionScreen(navController: NavController) {
                             put("prefill.contact", phone)
                             put("prefill.email", "user@yourapp.com")
                         }
+                        logCheckoutForensic("Checkout.open", CheckoutKind.ENTRY_FEE, orderId = orderId)
                         checkout.open(hostActivity, options)
                     } catch (e: Exception) {
+                        releaseCheckoutFlight("startCheckout_exception")
                         AnalyticsManager.track(
                             "payment_failed",
                             mapOf(
@@ -440,10 +523,18 @@ fun SubscriptionScreen(navController: NavController) {
     }
 
     fun resumeAfterEntryFeePaid(phoneForApi: String) {
-        launchMandateCheckoutViaBackend(phoneForApi)
+        // Mandate checkout opens only from the setup overlay Continue — never auto-launch here.
+        showSetupExplanationScreen = true
+        mandateLaunchHandled = false
     }
 
     fun resumeSubscriptionFlow() {
+        // A confirmation already owns the flow — do not open a second checkout (duplicate guard).
+        if (subState is SubscriptionState.Confirming || subState is SubscriptionState.SoftTimeout) {
+            confirming = true
+            Log.w("SUBSCRIPTION", "resumeSubscriptionFlow ignored — confirmation active")
+            return
+        }
         if (phone.isBlank()) {
             showPaymentError(
                 raw = "session_expired",
@@ -452,9 +543,9 @@ fun SubscriptionScreen(navController: NavController) {
             return
         }
         if (hasTrialPaid) {
+            // Single mandate entry point: overlay Continue only — never auto-open Checkout here.
             showSetupExplanationScreen = true
             mandateLaunchHandled = false
-            launchMandateCheckoutViaBackend(phone.trim())
             return
         }
         startCheckout()
@@ -515,6 +606,7 @@ fun SubscriptionScreen(navController: NavController) {
 
                             when (phase) {
                             CheckoutKind.ENTRY_FEE -> {
+                                releaseCheckoutFlight("entry_fee_payment_success")
                                 if (hasTrialPaid) {
                                     Log.w(
                                         "SUBSCRIPTION",
@@ -619,11 +711,11 @@ fun SubscriptionScreen(navController: NavController) {
 
                                 val created = SubscriptionApi.createSubscription(phoneForApi)
                                 created.fold(
-                                    onSuccess = { subId ->
+                                    onSuccess = { result ->
                                         AnalyticsManager.track(
                                             "subscription_created",
                                             mapOf(
-                                                "subscription_id" to subId,
+                                                "subscription_id" to result.subscriptionId,
                                                 "plan_id" to "monthly_99"
                                             )
                                         )
@@ -631,11 +723,12 @@ fun SubscriptionScreen(navController: NavController) {
                                             "mandate_screen_shown",
                                             mapOf("source" to "after_trial_setup")
                                         )
-                                        pendingSubscriptionId = subId
+                                        pendingSubscriptionId = result.subscriptionId
                                         hasTrialPaid = true
                                         showSetupExplanationScreen = true
                                         isLoading = false
                                         mandateLaunchHandled = false
+                                        releaseCheckoutFlight("entry_fee_success_before_mandate_overlay")
                                     },
                                     onFailure = { e ->
                                         AnalyticsManager.track(
@@ -657,6 +750,7 @@ fun SubscriptionScreen(navController: NavController) {
                             }
 
                             CheckoutKind.MANDATE -> {
+                                releaseCheckoutFlight("mandate_payment_success")
                                 var subId = pendingSubscriptionId?.trim().orEmpty()
                                 if (subId.isBlank()) {
                                     val resolved = obtainSubscriptionIdFromBackend(phoneForApi)
@@ -671,145 +765,28 @@ fun SubscriptionScreen(navController: NavController) {
                                         )
                                         return@launch
                                     }
-                                    subId = resolved.getOrThrow()
+                                    val created = resolved.getOrThrow()
+                                    if (!created.checkoutRequired || created.alreadyActive) {
+                                        if (handleAlreadyActiveMandate(phoneForApi)) return@launch
+                                    }
+                                    subId = created.subscriptionId
                                 }
                                 pendingSubscriptionId = subId
-                                Log.d(
-                                    "SubscriptionDebug",
-                                    "3. Entering MANDATE branch subscriptionId=$subId pendingSubscriptionId=$pendingSubscriptionId"
+                                Log.i("SUBSCRIPTION", "MANDATE success — handing off to durable confirmation")
+                                AnalyticsManager.track(
+                                    "mandate_success",
+                                    mapOf("subscription_id" to subId)
                                 )
-                                MandateDebugLog.note(
-                                    "MANDATE PaymentResult.Success — starting verifyMandateWithPolling subId=$subId"
-                                )
-                                Log.i("SUBSCRIPTION", "MANDATE success callback; verifying mandate status")
-                                bannerIsSuccess = true
-                                bannerMessage = "Finalizing AutoPay approval..."
-                                val mandateVerified = SubscriptionApi.verifyMandateWithPolling(subId)
-                                mandateVerified.fold(
-                                    onSuccess = { status ->
-                                        MandateDebugLog.note(
-                                            "verifyMandateWithPolling succeeded razorpay_status=$status — calling activateTrial"
-                                        )
-                                        AnalyticsManager.track(
-                                            "mandate_success",
-                                            mapOf("subscription_id" to subId)
-                                        )
-                                        if (status == "active") {
-                                            AnalyticsManager.track(
-                                                "subscription_activated",
-                                                mapOf("current_period_end" to null)
-                                            )
-                                        }
-                                        scope.launch {
-                                            val activated = SubscriptionApi.activateTrial(phoneForApi)
-                                            activated.fold(
-                                                onSuccess = { trialEnd ->
-                                                    MandateDebugLog.note(
-                                                        "post-mandate activateTrial success trial_end=$trialEnd — syncing entitlement"
-                                                    )
-                                                    val syncManager =
-                                                        UserSubscriptionSyncManager(dataStoreManager)
-                                                    val hasPremium =
-                                                        syncManager.syncUserSubscription(phoneForApi)
-                                                    if (!hasPremium) {
-                                                        MandateDebugLog.note(
-                                                            "post-mandate syncUserSubscription returned hasPremium=false " +
-                                                                "(expected trial after activate-trial)"
-                                                        )
-                                                        Log.e(
-                                                            "SUBSCRIPTION",
-                                                            "Mandate OK but no premium entitlement after activate-trial"
-                                                        )
-                                                        Log.d(
-                                                            "SubscriptionDebug",
-                                                            "8. FINAL OUTCOME = FAILURE (mandate_not_entitled) — mandate verified + activateTrial OK but hasPremium=false"
-                                                        )
-                                                        isLoading = false
-                                                        showSetupExplanationScreen = true
-                                                        mandatePaymentSuccessReceived = true
-                                                        mandateLaunchHandled = false
-                                                        showPaymentError(
-                                                            raw = "mandate_not_entitled",
-                                                            isMandateStep = true,
-                                                            onRetry = { resumeSubscriptionFlow() },
-                                                        )
-                                                        return@launch
-                                                    }
-                                                    Log.i(
-                                                        "SUBSCRIPTION",
-                                                        "Mandate verified status=$status; entitlement granted"
-                                                    )
-                                                    Log.d(
-                                                        "SubscriptionDebug",
-                                                        "8. FINAL OUTCOME = SUCCESS — mandate status=$status entitlement granted, showing success screen"
-                                                    )
-                                                    isLoading = false
-                                                    showSetupExplanationScreen = false
-                                                    currentCheckoutKind = CheckoutKind.NONE
-                                                    entryFeeSuccessHandled = false
-                                                    mandateLaunchHandled = false
-                                                    pendingSubscriptionId = null
-                                                    currentOrderId = null
-                                                    mandatePaymentSuccessReceived = false
-                                                    showTrialSuccessScreen = true
-                                                },
-                                                onFailure = { e ->
-                                                    MandateDebugLog.note(
-                                                        "post-mandate activateTrial failed error=${e.message}"
-                                                    )
-                                                    AnalyticsManager.track(
-                                                        "mandate_failed",
-                                                        mapOf(
-                                                            "error_reason" to (e.message
-                                                                ?: "activate_trial_failed")
-                                                        )
-                                                    )
-                                                    Log.e(
-                                                        "SUBSCRIPTION",
-                                                        "activate-trial after mandate failed",
-                                                        e
-                                                    )
-                                                    Log.d(
-                                                        "SubscriptionDebug",
-                                                        "8. FINAL OUTCOME = FAILURE (activateTrial failed) error=${e.message}"
-                                                    )
-                                                    isLoading = false
-                                                    showSetupExplanationScreen = true
-                                                    mandatePaymentSuccessReceived = true
-                                                    mandateLaunchHandled = false
-                                                    mandateRetryCooldownUntilMs =
-                                                        System.currentTimeMillis() + 3000L
-                                                    showPaymentError(
-                                                        raw = e.message,
-                                                        throwable = e,
-                                                        isMandateStep = true,
-                                                        onRetry = { resumeSubscriptionFlow() },
-                                                    )
-                                                }
-                                            )
-                                        }
-                                    },
-                                    onFailure = { e ->
-                                        AnalyticsManager.track(
-                                            "mandate_failed",
-                                            mapOf("error_reason" to (e.message ?: "verification_failed"))
-                                        )
-                                        Log.e("SUBSCRIPTION", "Mandate verification failed", e)
-                                        Log.d(
-                                            "SubscriptionDebug",
-                                            "8. FINAL OUTCOME = TIMEOUT/FAILURE (verifyMandateWithPolling) error=${e.message}"
-                                        )
-                                        showSetupExplanationScreen = true
-                                        mandatePaymentSuccessReceived = true
-                                        mandateLaunchHandled = false
-                                        mandateRetryCooldownUntilMs = System.currentTimeMillis() + 3000L
-                                        showPaymentError(
-                                            raw = e.message,
-                                            throwable = e,
-                                            isMandateStep = true,
-                                            onRetry = { resumeSubscriptionFlow() },
-                                        )
-                                    }
+                                // Hand the whole verify → activate → sync lifecycle to the orchestrator.
+                                // It persists a durable ticket and survives restart/process death; the
+                                // orchestrator state collector below drives the confirming/success/failure UI.
+                                currentCheckoutKind = CheckoutKind.NONE
+                                mandateLaunchHandled = false
+                                mandatePaymentSuccessReceived = true
+                                SubscriptionOrchestrator.onMandatePaymentSuccess(
+                                    phone = phoneForApi,
+                                    subscriptionId = subId,
+                                    paymentId = result.paymentId,
                                 )
                             }
 
@@ -839,6 +816,7 @@ fun SubscriptionScreen(navController: NavController) {
                 }
 
                 is PaymentResult.Error -> {
+                    releaseCheckoutFlight("payment_error")
                     val failedStep = when {
                         result.checkoutKind == CheckoutKind.MANDATE -> "mandate"
                         result.checkoutKind == CheckoutKind.ENTRY_FEE -> "entry_fee"
@@ -878,6 +856,68 @@ fun SubscriptionScreen(navController: NavController) {
                     )
                     Log.e("SUBSCRIPTION", "PaymentResult.Error: ${result.message}")
                 }
+            }
+        }
+    }
+
+    // Single place the whole post-payment confirmation lifecycle drives the UI.
+    LaunchedEffect(subState) {
+        when (val s = subState) {
+            is SubscriptionState.Confirming -> {
+                confirming = true
+                confirmingSoft = false
+                isLoading = false
+                showSetupExplanationScreen = false
+                showTrialSuccessScreen = false
+                paymentErrorDialog = null
+                Log.d("SUBSCRIPTION", "confirmation phase=${s.phase} attempt=${s.attempt}")
+            }
+
+            is SubscriptionState.Premium -> {
+                confirming = false
+                confirmingSoft = false
+                isLoading = false
+                showSetupExplanationScreen = false
+                currentCheckoutKind = CheckoutKind.NONE
+                entryFeeSuccessHandled = false
+                mandateLaunchHandled = false
+                mandatePaymentSuccessReceived = false
+                pendingSubscriptionId = null
+                currentOrderId = null
+                AnalyticsManager.track("subscription_confirmed")
+                showTrialSuccessScreen = true
+                SubscriptionOrchestrator.reset()
+            }
+
+            is SubscriptionState.SoftTimeout -> {
+                // Graceful, NOT a failure — the durable job keeps confirming in the background.
+                // We must NOT surface a retry that reopens Razorpay while it runs (duplicate risk).
+                confirming = true
+                confirmingSoft = true
+                isLoading = false
+                showSetupExplanationScreen = false
+                paymentErrorDialog = null
+            }
+
+            is SubscriptionState.TerminalFailure -> {
+                confirming = false
+                confirmingSoft = false
+                isLoading = false
+                showSetupExplanationScreen = true
+                mandatePaymentSuccessReceived = true
+                mandateLaunchHandled = false
+                mandateRetryCooldownUntilMs = System.currentTimeMillis() + 3000L
+                showPaymentError(
+                    raw = s.reason,
+                    isMandateStep = true,
+                    onRetry = { resumeSubscriptionFlow() },
+                )
+                SubscriptionOrchestrator.reset()
+            }
+
+            SubscriptionState.Idle -> {
+                confirming = false
+                confirmingSoft = false
             }
         }
     }
@@ -1051,7 +1091,7 @@ fun SubscriptionScreen(navController: NavController) {
                 if (mandatePaymentSuccessReceived) {
                     AnalyticsManager.track("mandate_retry_clicked")
                     mandateLaunchHandled = false
-                    resumeSubscriptionFlow()
+                    launchMandateCheckoutViaBackend(phone.trim())
                     return@SubscriptionSetupFullScreenOverlay
                 }
                 AnalyticsManager.track("mandate_initiated")
@@ -1067,9 +1107,12 @@ fun SubscriptionScreen(navController: NavController) {
                 }
                 scope.launch {
                     obtainSubscriptionIdFromBackend(phoneForApi).fold(
-                        onSuccess = { subId ->
+                        onSuccess = { created ->
+                            if (!created.checkoutRequired || created.alreadyActive) {
+                                if (handleAlreadyActiveMandate(phoneForApi)) return@launch
+                            }
                             isLoading = false
-                            openMandateCheckout(subId)
+                            openMandateCheckout(created.subscriptionId)
                         },
                         onFailure = { e ->
                             mandateLaunchHandled = false
@@ -1093,8 +1136,7 @@ fun SubscriptionScreen(navController: NavController) {
                     val phoneForNav = dataStoreManager.phoneNumber.firstOrNull()?.trim().orEmpty()
                         .ifBlank { phone }
                     val hasPremium = if (phoneForNav.isNotBlank()) {
-                        UserSubscriptionSyncManager(dataStoreManager)
-                            .syncUserSubscription(phoneForNav)
+                        EntitlementRepository.refresh(phoneForNav)
                     } else {
                         false
                     }
@@ -1117,27 +1159,76 @@ fun SubscriptionScreen(navController: NavController) {
             }
         )
 
-        bannerMessage?.let { msg ->
-            if (bannerIsSuccess) {
-                Snackbar(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp),
-                    containerColor = PremiumSubscriptionColors.Gold.copy(alpha = 0.92f),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text(
-                        msg,
-                        color = Color(0xFF0A0A0B),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
+        SubscriptionConfirmingOverlay(
+            visible = confirming,
+            soft = confirmingSoft,
+            onContinueInBackground = {
+                // Let the user browse the paywall; the durable job + recovery keep confirming and
+                // will surface success automatically once entitlement lands.
+                confirming = false
+            },
+        )
 
         PaymentErrorAlertDialog(
             state = paymentErrorDialog,
             onDismiss = { paymentErrorDialog = null },
         )
+    }
+}
+
+/**
+ * Blocking, reassuring overlay shown while the orchestrator confirms the subscription. Replaces the
+ * old "Finalizing…" snackbar so the user is never shown a premature failure during confirmation.
+ */
+@Composable
+private fun SubscriptionConfirmingOverlay(
+    visible: Boolean,
+    soft: Boolean,
+    onContinueInBackground: () -> Unit,
+) {
+    if (!visible) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xE60A0A0B)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 40.dp),
+        ) {
+            CircularProgressIndicator(color = PremiumSubscriptionColors.Gold)
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = if (soft) "Still confirming your subscription…" else "Confirming your subscription…",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = if (soft) {
+                    "This is taking a little longer than usual. We’ll finish automatically in the " +
+                        "background — you won’t be charged twice and you won’t lose premium."
+                } else {
+                    "Please keep the app open. This can take a few moments — you won’t be charged twice."
+                },
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+            if (soft) {
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onContinueInBackground) {
+                    Text(
+                        text = "Continue browsing",
+                        color = PremiumSubscriptionColors.Gold,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
     }
 }

@@ -30,6 +30,7 @@ import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.Serializable
 
@@ -60,6 +61,12 @@ fun SplashScreen(navController: NavController) {
             )
 
             delay(1200)
+
+            // Resume any interrupted post-payment confirmation before routing. If a paid mandate is
+            // still confirming, the orchestrator updates the entitlement source of truth in the
+            // background; routing below reflects the latest state and the subscription screen shows
+            // the confirming overlay if premium hasn't landed yet.
+            SubscriptionOrchestrator.recover()
 
             val loggedIn = dataStoreManager.isLoggedIn.first()
             val profileCompleted = dataStoreManager.isProfileCompleted.first()

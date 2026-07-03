@@ -149,8 +149,23 @@ object SubscriptionApi {
             }
         }
 
-    suspend fun createSubscription(phone: String): Result<String> = withRetry("createSubscription") {
+    /** Parsed create-subscription edge function response. */
+    data class CreateSubscriptionResult(
+        val subscriptionId: String,
+        val checkoutRequired: Boolean = true,
+        val alreadyActive: Boolean = false,
+        val razorpayStatus: String? = null,
+    )
+
+    suspend fun createSubscription(phone: String): Result<CreateSubscriptionResult> =
+        withRetry("createSubscription") {
         try {
+            Log.d(
+                "CheckoutForensic",
+                "createSubscription REQUEST phoneTail=${phone.takeLast(4)} " +
+                    "ts=${System.currentTimeMillis()} thread=${Thread.currentThread().name}\n" +
+                    Log.getStackTraceString(Throwable()),
+            )
             val json = JSONObject().apply {
                 put("phone", phone)
             }
@@ -171,11 +186,25 @@ object SubscriptionApi {
                 )
             }
 
-            val subscriptionId = JSONObject(body).optString("subscription_id")
+            val parsed = JSONObject(body)
+            val subscriptionId = parsed.optString("subscription_id")
             if (subscriptionId.isBlank()) {
                 Result.failure(Exception("No subscription_id received"))
             } else {
-                Result.success(subscriptionId)
+                val result = CreateSubscriptionResult(
+                    subscriptionId = subscriptionId,
+                    checkoutRequired = !parsed.optBoolean("already_active", false) &&
+                        parsed.optBoolean("checkout_required", true),
+                    alreadyActive = parsed.optBoolean("already_active", false),
+                    razorpayStatus = parsed.optString("razorpay_status").ifBlank { null },
+                )
+                Log.d(
+                    "CheckoutForensic",
+                    "createSubscription RESPONSE subId=$subscriptionId " +
+                        "alreadyActive=${result.alreadyActive} checkoutRequired=${result.checkoutRequired} " +
+                        "razorpayStatus=${result.razorpayStatus}",
+                )
+                Result.success(result)
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -251,77 +280,6 @@ object SubscriptionApi {
         } catch (e: Exception) {
             Result.failure(e)
         }
-    }
-
-    /**
-     * Razorpay status can be eventually consistent right after Paytm/UPI approval.
-     * Poll briefly before declaring failure to avoid false-negative UX.
-     */
-    suspend fun verifyMandateWithPolling(
-        subscriptionId: String,
-        attempts: Int = 6,
-        delayMs: Long = 2500L
-    ): Result<String> = withContext(Dispatchers.IO) {
-        var lastError: Throwable? = null
-        val pollStartMs = System.currentTimeMillis()
-        Log.d(
-            "SubscriptionDebug",
-            "4. verifyMandateWithPolling START sub=$subscriptionId attempts=$attempts delayMs=$delayMs"
-        )
-        repeat(attempts) { idx ->
-            val attempt = idx + 1
-            val elapsedMs = System.currentTimeMillis() - pollStartMs
-            Log.d(TAG, "event=mandate_poll_attempt attempt=$attempt/$attempts sub=$subscriptionId")
-            Log.d(
-                "SubscriptionDebug",
-                "4. verifyMandateWithPolling attempt=$attempt/$attempts elapsedMs=$elapsedMs sub=$subscriptionId"
-            )
-            val r = verifyMandate(subscriptionId)
-            val rzStatus = r.getOrNull()
-            MandateDebugLog.verifyMandatePoll(attempt, attempts, subscriptionId, rzStatus)
-            Log.d(
-                "SubscriptionDebug",
-                "4. verifyMandateWithPolling attempt=$attempt result=${if (r.isSuccess) "success" else "retry/fail"} " +
-                    "razorpayStatus=$rzStatus error=${r.exceptionOrNull()?.message}"
-            )
-            if (r.isSuccess) {
-                Log.i(TAG, "event=mandate_poll_success attempt=$attempt sub=$subscriptionId")
-                Log.d(
-                    "SubscriptionDebug",
-                    "4. verifyMandateWithPolling SUCCESS attempt=$attempt totalElapsedMs=${System.currentTimeMillis() - pollStartMs} status=$rzStatus"
-                )
-                MandateDebugLog.verifyMandateResult(subscriptionId, true, rzStatus, null)
-                return@withContext r
-            }
-            val message = r.exceptionOrNull()?.message.orEmpty().lowercase()
-            lastError = r.exceptionOrNull()
-
-            // Terminal statuses shouldn't be retried.
-            if ("cancelled" in message || "halted" in message || "completed" in message) {
-                MandateDebugLog.verifyMandateResult(
-                    subscriptionId,
-                    false,
-                    null,
-                    r.exceptionOrNull()?.message,
-                )
-                return@withContext Result.failure(
-                    Exception(r.exceptionOrNull()?.message ?: "Mandate verification failed")
-                )
-            }
-            if (attempt < attempts) delay(delayMs)
-        }
-        MandateDebugLog.verifyMandateResult(
-            subscriptionId,
-            false,
-            null,
-            lastError?.message ?: "Mandate verification timed out",
-        )
-        Log.d(
-            "SubscriptionDebug",
-            "4. verifyMandateWithPolling TIMEOUT sub=$subscriptionId totalElapsedMs=${System.currentTimeMillis() - pollStartMs} " +
-                "lastError=${lastError?.message}"
-        )
-        Result.failure(lastError ?: Exception("Mandate verification timed out"))
     }
 
     suspend fun refreshSubscriptionStatus(phone: String): Result<Boolean> = withContext(Dispatchers.IO) {
