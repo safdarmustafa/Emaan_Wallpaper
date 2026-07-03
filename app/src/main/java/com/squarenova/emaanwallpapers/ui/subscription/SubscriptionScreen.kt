@@ -174,7 +174,7 @@ fun SubscriptionScreen(navController: NavController) {
                     subId,
                 )
             ) {
-                pendingSubscriptionId = subId
+                // Show setup overlay only — subscription id is resolved via create-subscription on Continue.
                 entryFeeSuccessHandled = true
                 showSetupExplanationScreen = true
                 if (BuildConfig.DEBUG) {
@@ -238,24 +238,45 @@ fun SubscriptionScreen(navController: NavController) {
         isLoading = false
     }
 
-    suspend fun fetchSubscriptionIdFromServer(): String? {
-        val cleanPhone = phone.trim()
-        if (cleanPhone.isBlank()) return null
-        val row = try {
-            SupabaseClient.client
-                .postgrest["users"]
-                .select { filter { eq("phone_number", cleanPhone) } }
-                .decodeList<SubscriptionResumeUserRow>()
-                .firstOrNull()
-        } catch (_: Exception) {
-            null
-        } ?: return null
-        hasTrialPaid = row.trial_paid == true
-        val subId = row.razorpay_subscription_id?.trim().orEmpty()
-        if (subId.isNotBlank()) {
-            pendingSubscriptionId = subId
+    /**
+     * Single client entry point for obtaining a mandate-ready subscription id.
+     * Always delegates reuse vs. create-new to the create-subscription edge function.
+     */
+    suspend fun obtainSubscriptionIdFromBackend(phoneForApi: String): Result<String> {
+        val cleanPhone = phoneForApi.trim()
+        if (cleanPhone.isBlank()) {
+            return Result.failure(IllegalStateException("session_expired"))
         }
-        return subId.takeIf { it.isNotBlank() }
+        return SubscriptionApi.createSubscription(cleanPhone).also { result ->
+            result.onSuccess { subId -> pendingSubscriptionId = subId }
+        }
+    }
+
+    fun launchMandateCheckoutViaBackend(
+        phoneForApi: String,
+        onFailure: () -> Unit = { retrySubscription() },
+    ) {
+        scope.launch {
+            isLoading = true
+            obtainSubscriptionIdFromBackend(phoneForApi).fold(
+                onSuccess = { subId ->
+                    hasTrialPaid = true
+                    entryFeeSuccessHandled = true
+                    isLoading = false
+                    openMandateCheckout(subId)
+                },
+                onFailure = { e ->
+                    isLoading = false
+                    showSetupExplanationScreen = true
+                    showPaymentError(
+                        raw = e.message,
+                        throwable = e,
+                        isMandateStep = true,
+                        onRetry = onFailure,
+                    )
+                },
+            )
+        }
     }
 
     val retrySubscriptionHolder = remember { object { lateinit var action: () -> Unit } }
@@ -411,40 +432,7 @@ fun SubscriptionScreen(navController: NavController) {
     }
 
     fun resumeAfterEntryFeePaid(phoneForApi: String) {
-        scope.launch {
-            isLoading = true
-            val subId = pendingSubscriptionId?.trim().orEmpty()
-                .ifBlank { fetchSubscriptionIdFromServer().orEmpty() }
-            if (subId.isNotBlank()) {
-                hasTrialPaid = true
-                entryFeeSuccessHandled = true
-                showSetupExplanationScreen = true
-                isLoading = false
-                openMandateCheckout(subId)
-                return@launch
-            }
-            val created = SubscriptionApi.createSubscription(phoneForApi)
-            created.fold(
-                onSuccess = { newSubId ->
-                    hasTrialPaid = true
-                    entryFeeSuccessHandled = true
-                    pendingSubscriptionId = newSubId
-                    showSetupExplanationScreen = true
-                    isLoading = false
-                    openMandateCheckout(newSubId)
-                },
-                onFailure = { e ->
-                    isLoading = false
-                    showSetupExplanationScreen = true
-                    showPaymentError(
-                        raw = e.message,
-                        throwable = e,
-                        isMandateStep = true,
-                        onRetry = { retrySubscription() },
-                    )
-                }
-            )
-        }
+        launchMandateCheckoutViaBackend(phoneForApi)
     }
 
     fun resumeSubscriptionFlow() {
@@ -455,15 +443,10 @@ fun SubscriptionScreen(navController: NavController) {
             )
             return
         }
-        val subId = pendingSubscriptionId?.trim().orEmpty()
-        if (hasTrialPaid && subId.isNotBlank()) {
+        if (hasTrialPaid) {
             showSetupExplanationScreen = true
             mandateLaunchHandled = false
-            openMandateCheckout(subId)
-            return
-        }
-        if (hasTrialPaid) {
-            resumeAfterEntryFeePaid(phone.trim())
+            launchMandateCheckoutViaBackend(phone.trim())
             return
         }
         startCheckout()
@@ -661,17 +644,21 @@ fun SubscriptionScreen(navController: NavController) {
                             }
 
                             CheckoutKind.MANDATE -> {
-                                val subId = pendingSubscriptionId?.trim().orEmpty()
-                                    .ifBlank { fetchSubscriptionIdFromServer().orEmpty() }
+                                var subId = pendingSubscriptionId?.trim().orEmpty()
                                 if (subId.isBlank()) {
-                                    showSetupExplanationScreen = true
-                                    currentCheckoutKind = CheckoutKind.NONE
-                                    showPaymentError(
-                                        raw = "missing_subscription_id",
-                                        isMandateStep = true,
-                                        onRetry = { resumeSubscriptionFlow() },
-                                    )
-                                    return@launch
+                                    val resolved = obtainSubscriptionIdFromBackend(phoneForApi)
+                                    if (resolved.isFailure) {
+                                        showSetupExplanationScreen = true
+                                        currentCheckoutKind = CheckoutKind.NONE
+                                        showPaymentError(
+                                            raw = resolved.exceptionOrNull()?.message,
+                                            throwable = resolved.exceptionOrNull(),
+                                            isMandateStep = true,
+                                            onRetry = { resumeSubscriptionFlow() },
+                                        )
+                                        return@launch
+                                    }
+                                    subId = resolved.getOrThrow()
                                 }
                                 pendingSubscriptionId = subId
                                 MandateDebugLog.note(
@@ -1026,25 +1013,43 @@ fun SubscriptionScreen(navController: NavController) {
             ctaEnabled = !mandatePaymentSuccessReceived || retryNowMs >= mandateRetryCooldownUntilMs,
             onContinue = {
                 if (mandateLaunchHandled) return@SubscriptionSetupFullScreenOverlay
-                val subId = pendingSubscriptionId
-                if (subId.isNullOrBlank()) {
-                    showSetupExplanationScreen = true
-                    currentCheckoutKind = CheckoutKind.NONE
-                    showPaymentError(
-                        raw = "missing_subscription_id",
-                        isMandateStep = true,
-                        onRetry = { resumeSubscriptionFlow() },
-                    )
-                    return@SubscriptionSetupFullScreenOverlay
-                }
                 mandateLaunchHandled = true
                 isLoading = true
                 if (mandatePaymentSuccessReceived) {
                     AnalyticsManager.track("mandate_retry_clicked")
+                    mandateLaunchHandled = false
                     resumeSubscriptionFlow()
-                } else {
-                    AnalyticsManager.track("mandate_initiated")
-                    openMandateCheckout(subId)
+                    return@SubscriptionSetupFullScreenOverlay
+                }
+                AnalyticsManager.track("mandate_initiated")
+                val phoneForApi = phone.trim()
+                if (phoneForApi.isBlank()) {
+                    mandateLaunchHandled = false
+                    isLoading = false
+                    showPaymentError(
+                        raw = "session_expired",
+                        onRetry = { navigateBackToLogin() },
+                    )
+                    return@SubscriptionSetupFullScreenOverlay
+                }
+                scope.launch {
+                    obtainSubscriptionIdFromBackend(phoneForApi).fold(
+                        onSuccess = { subId ->
+                            isLoading = false
+                            openMandateCheckout(subId)
+                        },
+                        onFailure = { e ->
+                            mandateLaunchHandled = false
+                            isLoading = false
+                            showSetupExplanationScreen = true
+                            showPaymentError(
+                                raw = e.message,
+                                throwable = e,
+                                isMandateStep = true,
+                                onRetry = { resumeSubscriptionFlow() },
+                            )
+                        },
+                    )
                 }
             }
         )

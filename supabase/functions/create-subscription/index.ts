@@ -3,6 +3,34 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
+/** Statuses that may be returned to the client for mandate / checkout reuse. */
+const REUSABLE_STATUSES = new Set(["created", "authenticated", "active"]);
+
+/** Terminal Razorpay statuses — always mint a fresh subscription instead of reusing. */
+const TERMINAL_STATUSES = new Set(["cancelled", "completed", "expired", "halted"]);
+
+async function fetchRazorpaySubscriptionStatus(
+  subId: string,
+  auth: string,
+): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
+  const rz = await fetch(`https://api.razorpay.com/v1/subscriptions/${subId}`, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  const rzData = await rz.json();
+  if (!rz.ok) {
+    const msg =
+      rzData?.error?.description ||
+      rzData?.error?.message ||
+      JSON.stringify(rzData);
+    return { ok: false, error: msg };
+  }
+  const status = typeof rzData?.status === "string" ? rzData.status.trim().toLowerCase() : "";
+  if (!status) {
+    return { ok: false, error: "No status in Razorpay subscription response" };
+  }
+  return { ok: true, status };
+}
+
 serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -45,6 +73,7 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, serviceKey);
+    const auth = btoa(`${keyId}:${keySecret}`);
 
     const { data: row, error: userErr } = await supabase
       .from("users")
@@ -75,12 +104,47 @@ serve(async (req) => {
       typeof row.razorpay_subscription_id === "string"
         ? row.razorpay_subscription_id.trim()
         : "";
+
     if (existingSubId) {
-      log("subscription_reused", { phone, subscription_id: existingSubId });
-      return new Response(JSON.stringify({ subscription_id: existingSubId, reused: true }), {
-        status: 200,
-        headers: jsonHeaders,
-      });
+      const rzLookup = await fetchRazorpaySubscriptionStatus(existingSubId, auth);
+
+      if (rzLookup.ok) {
+        const rzStatus = rzLookup.status;
+
+        if (REUSABLE_STATUSES.has(rzStatus)) {
+          log("subscription_reused", {
+            phone,
+            subscription_id: existingSubId,
+            razorpay_status: rzStatus,
+          });
+          return new Response(
+            JSON.stringify({ subscription_id: existingSubId, reused: true }),
+            { status: 200, headers: jsonHeaders },
+          );
+        }
+
+        if (TERMINAL_STATUSES.has(rzStatus)) {
+          log("subscription_terminal_create_new", {
+            phone,
+            old_subscription_id: existingSubId,
+            razorpay_status: rzStatus,
+          });
+        } else {
+          // Unknown / transitional status — do not reuse; mint a fresh subscription.
+          log("subscription_unknown_status_create_new", {
+            phone,
+            old_subscription_id: existingSubId,
+            razorpay_status: rzStatus,
+          });
+        }
+      } else {
+        // Subscription missing or unreadable at Razorpay — mint a fresh one.
+        log("subscription_lookup_failed_create_new", {
+          phone,
+          old_subscription_id: existingSubId,
+          error: rzLookup.error,
+        });
+      }
     }
 
     const trialEndIso = typeof row.trial_end === "string" ? row.trial_end : "";
@@ -93,7 +157,6 @@ serve(async (req) => {
     }
 
     const startAtUnix = Math.max(Math.floor(trialEndMs / 1000), Math.floor(Date.now() / 1000) + 60);
-    const auth = btoa(`${keyId}:${keySecret}`);
     const rz = await fetch("https://api.razorpay.com/v1/subscriptions", {
       method: "POST",
       headers: {
@@ -146,7 +209,12 @@ serve(async (req) => {
       });
     }
 
-    log("subscription_created", { phone, subscription_id: subId, start_at: startAtUnix });
+    log("subscription_created", {
+      phone,
+      subscription_id: subId,
+      start_at: startAtUnix,
+      replaced_subscription_id: existingSubId || null,
+    });
 
     return new Response(JSON.stringify({ subscription_id: subId }), {
       status: 200,
