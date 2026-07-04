@@ -41,12 +41,26 @@ object MandateEntitlementResolver {
         return row.subscription_status?.trim()?.lowercase() == "authenticated"
     }
 
+    /** Outcome of [ensureTrialActivatedIfNeeded] for confirmation-flow deduplication. */
+    data class TrialActivationResult(
+        val row: EntitlementRow?,
+        /** True only when activate-trial returned success (idempotent server-side). */
+        val activateTrialSucceeded: Boolean,
+    )
+
     /**
      * If mandate is authenticated but DB is not yet "trial", call activate-trial.
-     * @return latest row after optional activation
+     * @param skipActivateTrial when true, reads entitlement only — used when activate-trial already
+     *   succeeded earlier in the same confirmation flow (avoids duplicate edge/Razorpay calls).
      */
-    suspend fun ensureTrialActivatedIfNeeded(phone: String, row: EntitlementRow?): EntitlementRow? {
-        if (!needsTrialActivation(row)) return row
+    suspend fun ensureTrialActivatedIfNeeded(
+        phone: String,
+        row: EntitlementRow?,
+        skipActivateTrial: Boolean = false,
+    ): TrialActivationResult {
+        if (skipActivateTrial || !needsTrialActivation(row)) {
+            return TrialActivationResult(row, activateTrialSucceeded = false)
+        }
 
         MandateDebugLog.note(
             "authenticated+trial_paid detected — calling activate-trial to set subscription_status=trial"
@@ -68,7 +82,10 @@ object MandateEntitlementResolver {
             }
         )
 
-        return if (result.isSuccess) fetchRow(phone) else row
+        return TrialActivationResult(
+            row = if (result.isSuccess) fetchRow(phone) else row,
+            activateTrialSucceeded = result.isSuccess,
+        )
     }
 
     fun hasPremium(row: EntitlementRow?): Boolean {

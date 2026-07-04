@@ -31,6 +31,13 @@ import kotlinx.coroutines.sync.withLock
  */
 object EntitlementRepository {
 
+    /** Result of a premium refresh; used by confirmation to avoid duplicate activate-trial calls. */
+    data class RefreshResult(
+        val hasPremium: Boolean,
+        /** True when activate-trial succeeded during this refresh (server idempotent). */
+        val activateTrialSucceeded: Boolean = false,
+    )
+
     private const val TAG = "EntitlementRepository"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -66,12 +73,17 @@ object EntitlementRepository {
      * The single premium refresh. Fetches the user row, activates the trial if the mandate is
      * authenticated-but-not-yet-trial, computes entitlement, caches it and updates [premium].
      *
-     * @return true if the user currently has premium access. Never throws.
+     * @param skipActivateTrial skips activate-trial when it already succeeded earlier in the same
+     *   confirmation flow — safe because activate-trial is idempotent and the server is authoritative.
+     * @return premium flag plus whether activate-trial succeeded in this refresh. Never throws.
      */
-    suspend fun refresh(phone: String): Boolean = refreshLock.withLock {
+    suspend fun refreshDetailed(
+        phone: String,
+        skipActivateTrial: Boolean = false,
+    ): RefreshResult = refreshLock.withLock {
         val cleanPhone = phone.trim()
         val cached = readCache()
-        if (cleanPhone.isBlank()) return cached
+        if (cleanPhone.isBlank()) return RefreshResult(hasPremium = cached)
 
         // Fetch is INCONCLUSIVE when it returns null. A logged-in user always has a row, so a null
         // here means offline / transient / RLS failure — NOT "user is not premium". We must never
@@ -80,11 +92,16 @@ object EntitlementRepository {
         val row = MandateEntitlementResolver.fetchRow(cleanPhone)
         if (row == null) {
             SecureLog.w(TAG, "refresh inconclusive (no row / offline) — keeping cached=$cached")
-            return cached
+            return RefreshResult(hasPremium = cached)
         }
 
         return try {
-            val finalRow = MandateEntitlementResolver.ensureTrialActivatedIfNeeded(cleanPhone, row) ?: row
+            val activation = MandateEntitlementResolver.ensureTrialActivatedIfNeeded(
+                cleanPhone,
+                row,
+                skipActivateTrial = skipActivateTrial,
+            )
+            val finalRow = activation.row ?: row
 
             val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
                 subscriptionStatus = finalRow.subscription_status,
@@ -102,12 +119,20 @@ object EntitlementRepository {
             persist(hasPremium)
             _premium.value = hasPremium
             SecureLog.d(TAG, "refresh phone=${SecureLog.redactPhone(cleanPhone)} premium=$hasPremium status=${finalRow.subscription_status}")
-            hasPremium
+            RefreshResult(
+                hasPremium = hasPremium,
+                activateTrialSucceeded = activation.activateTrialSucceeded,
+            )
         } catch (e: Exception) {
             SecureLog.w(TAG, "refresh compute/activate failed, keeping cached=$cached: ${e.message}")
-            cached
+            RefreshResult(hasPremium = cached)
         }
     }
+
+    /**
+     * Convenience wrapper — callers outside confirmation only need the premium boolean.
+     */
+    suspend fun refresh(phone: String): Boolean = refreshDetailed(phone).hasPremium
 
     /** Resets the in-memory premium flag on logout (the DataStore cache is cleared by logout()). */
     fun clearForLogout() {

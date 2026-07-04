@@ -309,19 +309,15 @@ fun SubscriptionScreen(navController: NavController) {
     suspend fun handleAlreadyActiveMandate(phoneForApi: String, subscriptionId: String): Boolean {
         isLoading = false
         showSetupExplanationScreen = false
-        val premium = EntitlementRepository.refresh(phoneForApi)
-        if (premium) {
-            showTrialSuccessScreen = true
-        } else {
-            // Not premium yet (e.g. authenticated→trial lag, or a pending renewal). Drive
-            // verify → activate → sync through the single-flight orchestrator (idempotent).
-            confirming = true
-            SubscriptionOrchestrator.onMandatePaymentSuccess(
-                phone = phoneForApi,
-                subscriptionId = subscriptionId,
-                paymentId = "",
-            )
-        }
+        // Orchestrator fast-path performs the single entitlement refresh (webhook may already
+        // have granted trial). A refresh here duplicated that work on authenticated retry paths
+        // where create-subscription already confirmed live mandate status at Razorpay.
+        confirming = true
+        SubscriptionOrchestrator.onMandatePaymentSuccess(
+            phone = phoneForApi,
+            subscriptionId = subscriptionId,
+            paymentId = "",
+        )
         return true
     }
 

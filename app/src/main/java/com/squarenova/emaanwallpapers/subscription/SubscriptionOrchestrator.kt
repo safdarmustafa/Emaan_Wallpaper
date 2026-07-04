@@ -52,7 +52,9 @@ object SubscriptionOrchestrator {
     // Total budget for one run. After this we stop working and retain the ticket; recovery
     // (foreground / restart) picks it up again. Prevents unbounded polling / battery drain.
     private const val HARD_CAP_MS = 300_000L
-    private const val BACKOFF_START_MS = 2_000L
+    // First retry delay after verify/refresh miss. 600 ms is enough for Razorpay eventual
+    // consistency while keeping exponential backoff (×1.6, cap 8 s) unchanged for later retries.
+    private const val BACKOFF_START_MS = 600L
     private const val BACKOFF_MAX_MS = 8_000L
     private const val BACKOFF_FACTOR = 1.6
     // Slower cadence during the extended (post-soft-timeout) phase.
@@ -231,7 +233,11 @@ object SubscriptionOrchestrator {
 
         // Fast path: the webhook may already have granted premium server-side.
         _state.value = SubscriptionState.Confirming(ConfirmationPhase.SYNCING_ENTITLEMENT, subId, 0)
-        if (EntitlementRepository.refresh(phone)) {
+        val fastPath = EntitlementRepository.refreshDetailed(phone)
+        // Tracks a successful activate-trial anywhere in this flow so we never call it twice.
+        // Safe: activate-trial is idempotent server-side; skipping duplicates only removes latency.
+        var activateTrialSucceededInFlow = fastPath.activateTrialSucceeded
+        if (fastPath.hasPremium) {
             succeed(store, subId)
             return
         }
@@ -306,16 +312,33 @@ object SubscriptionOrchestrator {
             }
 
             // 2) Transition authenticated → trial/active server-side (idempotent).
+            // Skip when fast-path refresh already activated — avoids a duplicate edge + Razorpay GET.
+            // On failure, activateTrialSucceededInFlow stays false and a later iteration retries.
             if (!extended) {
                 _state.value = SubscriptionState.Confirming(ConfirmationPhase.ACTIVATING, subId, attempt)
             }
-            SubscriptionApi.activateTrial(phone)
+            var attemptedActivateThisIteration = false
+            if (!activateTrialSucceededInFlow) {
+                attemptedActivateThisIteration = true
+                if (SubscriptionApi.activateTrial(phone).isSuccess) {
+                    activateTrialSucceededInFlow = true
+                }
+            }
 
             // 3) Read back the single source of truth.
+            // Skip activate-trial inside refresh when we already succeeded or just attempted it
+            // this iteration (prevents same-loop duplicate; next loop iteration can retry on failure).
             if (!extended) {
                 _state.value = SubscriptionState.Confirming(ConfirmationPhase.SYNCING_ENTITLEMENT, subId, attempt)
             }
-            if (EntitlementRepository.refresh(phone)) {
+            val syncResult = EntitlementRepository.refreshDetailed(
+                phone,
+                skipActivateTrial = activateTrialSucceededInFlow || attemptedActivateThisIteration,
+            )
+            if (syncResult.activateTrialSucceeded) {
+                activateTrialSucceededInFlow = true
+            }
+            if (syncResult.hasPremium) {
                 succeed(store, subId)
                 return
             }
