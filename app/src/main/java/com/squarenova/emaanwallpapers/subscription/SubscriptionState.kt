@@ -3,9 +3,8 @@ package com.squarenova.emaanwallpapers.subscription
 /**
  * Subscription System V2 — the single, explicit confirmation state machine.
  *
- * Boolean flags (`isLoading`, `entryFeeSuccessHandled`, `mandatePaymentSuccessReceived`, …) are
- * replaced by this one observable state. Only the [SubscriptionOrchestrator] mutates it; every UI
- * surface observes it.
+ * Boolean flags (`isLoading`, `mandatePaymentSuccessReceived`, …) are replaced by this one
+ * observable state. Only the [SubscriptionOrchestrator] mutates it; every UI surface observes it.
  *
  * Legal transitions (checkout launch itself is owned by the screen; everything after Razorpay's
  * payment-success callback is owned by the orchestrator):
@@ -45,11 +44,11 @@ sealed interface SubscriptionState {
     data class SoftTimeout(val subscriptionId: String) : SubscriptionState
 
     /**
-     * The ₹5 trial payment succeeded and a subscription exists, but the AutoPay mandate was never
-     * completed — Razorpay status is still pre-activation (created). The user exited/cancelled the
-     * mandate checkout. This is NOT a failure and NOT an endless "confirming": the durable ticket is
-     * retained (survives restart) and the UI offers a single "Complete AutoPay Setup" action that
-     * resumes THIS subscription's mandate checkout (never re-charging ₹5).
+     * A subscription exists, but the AutoPay mandate was never completed — Razorpay status is still
+     * pre-activation (created). The user exited/cancelled the mandate checkout. This is NOT a failure
+     * and NOT an endless "confirming": the durable ticket is retained (survives restart) and the UI
+     * offers a single "Complete AutoPay Setup" action that resumes THIS subscription's mandate
+     * checkout (never charging twice).
      */
     data class MandatePending(val subscriptionId: String) : SubscriptionState
 

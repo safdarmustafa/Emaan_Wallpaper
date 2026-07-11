@@ -658,7 +658,7 @@ fun ProfileScreen(navController: NavController) {
                     ),
                     ProfileAccountItem(
                         title = "Subscription Disclosure",
-                        subtitle = "₹5 trial, ₹99/month auto-renewal, refunds",
+                        subtitle = "3-day free trial, ₹99/month auto-renewal, refunds",
                         icon = Icons.Default.WorkspacePremium,
                         opensExternal = true,
                         onClick = {

@@ -189,7 +189,7 @@ fun PremiumFeatureRow(
 }
 
 /**
- * Full-screen interstitial after ₹5 success: explains mandate step (not a second “payment”).
+ * Full-screen interstitial before the mandate step: explains AutoPay approval (not a second “payment”).
  */
 @Composable
 fun SubscriptionSetupFullScreenOverlay(
@@ -232,7 +232,7 @@ fun SubscriptionSetupFullScreenOverlay(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = "You may see ₹5 again — this is already paid",
+                        text = "Approve AutoPay to start your free trial",
                         color = PremiumSubscriptionColors.TextSecondary,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
@@ -353,7 +353,7 @@ fun PremiumPricingHighlightCard(
             ) {
                 Column {
                     Text(
-                        text = "₹5 today",
+                        text = "Free for 3 days",
                         color = PremiumSubscriptionColors.TextPrimary,
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold

@@ -13,10 +13,10 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Bridges [com.razorpay.PaymentResultListener] (MainActivity) to Compose.
- * Tracks which Checkout session is in flight so ₹5 vs mandate success are handled differently.
+ * Tracks which Checkout session is in flight so mandate success is handled correctly.
  *
  * [prepareCheckout] also persists the kind so after UPI / memory pressure / process death
- * the success callback still knows whether this was ENTRY_FEE or MANDATE (in-memory alone is lost).
+ * the success callback still knows this was a MANDATE checkout (in-memory alone is lost).
  */
 object SubscriptionManager {
 
@@ -76,7 +76,7 @@ object SubscriptionManager {
 
     /**
      * After process death, in-memory [pendingCheckout] is [CheckoutKind.NONE] but disk may still
-     * hold ENTRY_FEE or MANDATE. Call on [Lifecycle.Event.ON_RESUME] before relying on phase state.
+     * hold a pending MANDATE. Call on [Lifecycle.Event.ON_RESUME] before relying on phase state.
      */
     fun restorePendingCheckoutFromPersistenceIfNeeded() {
         val p = readPersistedKind()
@@ -153,8 +153,6 @@ object SubscriptionManager {
 /** Which Razorpay Checkout session completed. */
 enum class CheckoutKind {
     NONE,
-    /** ₹5 entry fee (order) */
-    ENTRY_FEE,
     /** Subscription / autopay mandate */
     MANDATE
 }

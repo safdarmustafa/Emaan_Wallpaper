@@ -132,12 +132,6 @@ private fun shouldResumeMandateSetup(
     }
 }
 
-private fun isEntryFeeAlreadyVerifiedError(message: String?): Boolean {
-    val lower = message?.lowercase().orEmpty()
-    return "entry fee already verified" in lower ||
-        "already verified for this account" in lower
-}
-
 @Composable
 fun SubscriptionScreen(navController: NavController) {
 
@@ -151,17 +145,14 @@ fun SubscriptionScreen(navController: NavController) {
     var paymentErrorDialog by remember { mutableStateOf<PaymentErrorDialogState?>(null) }
 
     var currentCheckoutKind by remember { mutableStateOf(CheckoutKind.NONE) }
-    var entryFeeSuccessHandled by remember { mutableStateOf(false) }
     var mandateLaunchHandled by remember { mutableStateOf(false) }
     var mandatePaymentSuccessReceived by remember { mutableStateOf(false) }
     var mandateRetryCooldownUntilMs by remember { mutableStateOf(0L) }
     var retryNowMs by remember { mutableStateOf(0L) }
-    var currentOrderId by remember { mutableStateOf<String?>(null) }
     var pendingSubscriptionId by remember { mutableStateOf<String?>(null) }
     var hasTrialPaid by remember { mutableStateOf(false) }
-    var userStatus by remember { mutableStateOf("new") }
 
-    /** Full-screen explanation screen after ₹5, before mandate Razorpay. */
+    /** Full-screen explanation shown before the mandate (AutoPay) Razorpay checkout. */
     var showSetupExplanationScreen by remember { mutableStateOf(false) }
 
     /** Post–mandate success; user taps Continue → Home. */
@@ -173,7 +164,7 @@ fun SubscriptionScreen(navController: NavController) {
     /** Confirmation is taking longer than usual but is still running in the background. */
     var confirmingSoft by remember { mutableStateOf(false) }
 
-    /** ₹5 paid but AutoPay mandate never completed — offer to finish it (no re-charge). */
+    /** Subscription created but AutoPay mandate never completed — offer to finish it. */
     var showMandatePending by remember { mutableStateOf(false) }
 
     /** Observable V2 confirmation state machine (survives rotation/background/process death). */
@@ -195,7 +186,6 @@ fun SubscriptionScreen(navController: NavController) {
                 null
             }
             hasTrialPaid = row?.trial_paid == true
-            userStatus = if (row == null) "new" else "returning"
 
             if (SubscriptionEntitlement.hasPremiumAccess(
                     row?.subscription_status,
@@ -218,7 +208,6 @@ fun SubscriptionScreen(navController: NavController) {
                 )
             ) {
                 // Show setup overlay only — subscription id is resolved via create-subscription on Continue.
-                entryFeeSuccessHandled = true
                 showSetupExplanationScreen = true
                 if (BuildConfig.DEBUG) {
                     Log.d(
@@ -398,7 +387,6 @@ fun SubscriptionScreen(navController: NavController) {
                         return@launch
                     }
                     hasTrialPaid = true
-                    entryFeeSuccessHandled = true
                     isLoading = false
                     openMandateCheckout(created.subscriptionId)
                 },
@@ -414,121 +402,6 @@ fun SubscriptionScreen(navController: NavController) {
                 },
             )
         }
-    }
-
-    fun startCheckout() {
-        // Never launch a checkout while a confirmation is in flight — re-show the overlay instead.
-        if (subState is SubscriptionState.Confirming || subState is SubscriptionState.SoftTimeout) {
-            confirming = true
-            Log.w("SUBSCRIPTION", "startCheckout ignored — confirmation active")
-            return
-        }
-        if (phone.isBlank()) {
-            showPaymentError(
-                raw = "session_expired",
-                onRetry = { navigateBackToLogin() },
-            )
-            return
-        }
-
-        val hostActivity = activity
-        if (hostActivity == null) {
-            showPaymentError(
-                raw = "activity_null",
-                onRetry = { retrySubscription() },
-            )
-            Log.e("SUBSCRIPTION", "LocalActivity is null — cannot open Razorpay")
-            return
-        }
-
-        scope.launch {
-            AnalyticsManager.track(
-                "trial_cta_clicked",
-                mapOf(
-                    "screen_name" to "subscription",
-                    "user_status" to userStatus,
-                    "has_trial_paid" to hasTrialPaid
-                )
-            )
-            isLoading = true
-            paymentErrorDialog = null
-            entryFeeSuccessHandled = false
-            mandateLaunchHandled = false
-            mandatePaymentSuccessReceived = false
-            currentOrderId = null
-            if (!hasTrialPaid) {
-                pendingSubscriptionId = null
-            }
-
-            val orderResult = SubscriptionApi.createOrder()
-            orderResult.fold(
-                onSuccess = { orderId ->
-                    if (!tryAcquireCheckoutFlight("startCheckout_entry_fee", CheckoutKind.ENTRY_FEE)) {
-                        isLoading = false
-                        Log.w("SUBSCRIPTION", "startCheckout ignored — checkout already in flight")
-                        return@fold
-                    }
-                    AnalyticsManager.track(
-                        "payment_initiated",
-                        mapOf("amount" to 5, "currency" to "INR")
-                    )
-                    try {
-                        currentOrderId = orderId
-                        currentCheckoutKind = CheckoutKind.ENTRY_FEE
-                        SubscriptionManager.prepareCheckout(CheckoutKind.ENTRY_FEE)
-                        val checkout = Checkout()
-                        checkout.setKeyID(RazorpayConfig.KEY_ID)
-                        val options = JSONObject().apply {
-                            put("order_id", orderId)
-                            put("name", "Emaan Wallpapers")
-                            put("description", "₹5 one-time entry fee")
-                            put("currency", "INR")
-                            put("prefill.contact", phone)
-                            put("prefill.email", "user@yourapp.com")
-                        }
-                        logCheckoutForensic("Checkout.open", CheckoutKind.ENTRY_FEE, orderId = orderId)
-                        checkout.open(hostActivity, options)
-                    } catch (e: Exception) {
-                        releaseCheckoutFlight("startCheckout_exception")
-                        AnalyticsManager.track(
-                            "payment_failed",
-                            mapOf(
-                                "error_reason" to (e.message ?: "open_checkout_failed"),
-                                "step" to "entry_fee"
-                            )
-                        )
-                        Log.e("SUBSCRIPTION", "startCheckout open", e)
-                        currentCheckoutKind = CheckoutKind.NONE
-                        currentOrderId = null
-                        showPaymentError(
-                            raw = e.message,
-                            throwable = e,
-                            onRetry = { retrySubscription() },
-                        )
-                    }
-                },
-                onFailure = { e ->
-                    AnalyticsManager.track(
-                        "payment_failed",
-                        mapOf(
-                            "error_reason" to (e.message ?: "create_order_failed"),
-                            "step" to "entry_fee"
-                        )
-                    )
-                    showPaymentError(
-                        raw = e.message,
-                        throwable = e,
-                        onRetry = { retrySubscription() },
-                    )
-                }
-            )
-        }
-    }
-
-    fun resumeAfterEntryFeePaid(phoneForApi: String) {
-        // Mandate checkout opens only from the setup overlay Continue — never auto-launch here.
-        showSetupExplanationScreen = true
-        mandateLaunchHandled = false
     }
 
     fun resumeSubscriptionFlow() {
@@ -551,12 +424,8 @@ fun SubscriptionScreen(navController: NavController) {
             mandateLaunchHandled = false
             return
         }
-        // Phase 3C: mandate-first onboarding. Instead of the ₹5 entry-fee checkout (startCheckout →
-        // createOrder → verifyPayment → startTrial → createSubscription → mandate), Subscribe now
-        // enters the EXISTING mandate pipeline directly: createSubscription → openMandateCheckout →
-        // SubscriptionOrchestrator → activateTrial → Premium. All downstream handling is reused
-        // unchanged. The ₹5 path (startCheckout and its collector branch) is left intact but unused
-        // and is scheduled for removal in Phase 3D.
+        // Mandate-first onboarding: Subscribe enters the mandate pipeline directly —
+        // createSubscription → openMandateCheckout → SubscriptionOrchestrator → activateTrial → Premium.
         launchMandateCheckoutViaBackend(phone.trim())
     }
 
@@ -614,150 +483,6 @@ fun SubscriptionScreen(navController: NavController) {
                             )
 
                             when (phase) {
-                            CheckoutKind.ENTRY_FEE -> {
-                                releaseCheckoutFlight("entry_fee_payment_success")
-                                if (hasTrialPaid) {
-                                    Log.w(
-                                        "SUBSCRIPTION",
-                                        "ENTRY_FEE success ignored; entry fee already verified — resuming mandate"
-                                    )
-                                    resumeAfterEntryFeePaid(phoneForApi)
-                                    return@launch
-                                }
-                                if (entryFeeSuccessHandled) {
-                                    Log.w(
-                                        "SUBSCRIPTION",
-                                        "Ignoring duplicate ENTRY_FEE success (createSubscription already started)"
-                                    )
-                                    return@launch
-                                }
-                                Log.i("SUBSCRIPTION", "ENTRY_FEE success")
-                                AnalyticsManager.track(
-                                    "payment_success",
-                                    mapOf(
-                                        "payment_id" to result.paymentId,
-                                        "amount" to 5
-                                    )
-                                )
-                                entryFeeSuccessHandled = true
-
-                                val payId = result.paymentId
-                                val orderId = currentOrderId?.trim().orEmpty()
-                                if (payId.isBlank()) {
-                                    entryFeeSuccessHandled = false
-                                    currentCheckoutKind = CheckoutKind.NONE
-                                    showPaymentError(
-                                        raw = "missing_payment_id",
-                                        onRetry = { resumeSubscriptionFlow() },
-                                    )
-                                    return@launch
-                                }
-                                if (orderId.isBlank()) {
-                                    entryFeeSuccessHandled = false
-                                    currentCheckoutKind = CheckoutKind.NONE
-                                    showPaymentError(
-                                        raw = "missing_order_id",
-                                        onRetry = { resumeSubscriptionFlow() },
-                                    )
-                                    return@launch
-                                }
-
-                                val verified = SubscriptionApi.verifyPayment(
-                                    phone = phoneForApi,
-                                    paymentId = payId,
-                                    orderId = orderId
-                                )
-                                if (verified.isFailure) {
-                                    val verifyError = verified.exceptionOrNull()
-                                    val verifyMessage = verifyError?.message
-                                    AnalyticsManager.track(
-                                        "payment_failed",
-                                        mapOf(
-                                            "error_reason" to (verifyMessage ?: "verify_failed"),
-                                            "step" to "entry_fee"
-                                        )
-                                    )
-                                    entryFeeSuccessHandled = false
-                                    currentCheckoutKind = CheckoutKind.NONE
-                                    if (isEntryFeeAlreadyVerifiedError(verifyMessage)) {
-                                        hasTrialPaid = true
-                                        resumeAfterEntryFeePaid(phoneForApi)
-                                    } else {
-                                        showPaymentError(
-                                            raw = verifyMessage,
-                                            throwable = verifyError,
-                                            onRetry = { resumeSubscriptionFlow() },
-                                        )
-                                    }
-                                    return@launch
-                                }
-
-                                hasTrialPaid = true
-
-                                val trialStarted = SubscriptionApi.startTrial(phoneForApi)
-                                if (trialStarted.isFailure) {
-                                    val trialError = trialStarted.exceptionOrNull()
-                                    AnalyticsManager.track(
-                                        "trial_start_failed",
-                                        mapOf("error_message" to (trialError?.message ?: "unknown"))
-                                    )
-                                    entryFeeSuccessHandled = false
-                                    currentCheckoutKind = CheckoutKind.NONE
-                                    showPaymentError(
-                                        raw = trialError?.message,
-                                        throwable = trialError,
-                                        onRetry = { resumeSubscriptionFlow() },
-                                    )
-                                    return@launch
-                                }
-                                AnalyticsManager.track(
-                                    "trial_started",
-                                    mapOf(
-                                        "trial_end_timestamp" to (System.currentTimeMillis() + 3L * 24L * 60L * 60L * 1000L),
-                                        "user_id" to phoneForApi
-                                    )
-                                )
-
-                                val created = SubscriptionApi.createSubscription(phoneForApi)
-                                created.fold(
-                                    onSuccess = { result ->
-                                        AnalyticsManager.track(
-                                            "subscription_created",
-                                            mapOf(
-                                                "subscription_id" to result.subscriptionId,
-                                                "plan_id" to "monthly_99"
-                                            )
-                                        )
-                                        AnalyticsManager.track(
-                                            "mandate_screen_shown",
-                                            mapOf("source" to "after_trial_setup")
-                                        )
-                                        pendingSubscriptionId = result.subscriptionId
-                                        hasTrialPaid = true
-                                        showSetupExplanationScreen = true
-                                        isLoading = false
-                                        mandateLaunchHandled = false
-                                        releaseCheckoutFlight("entry_fee_success_before_mandate_overlay")
-                                    },
-                                    onFailure = { e ->
-                                        AnalyticsManager.track(
-                                            "subscription_creation_failed",
-                                            mapOf("error_message" to (e.message ?: "unknown"))
-                                        )
-                                        entryFeeSuccessHandled = false
-                                        currentCheckoutKind = CheckoutKind.NONE
-                                        showSetupExplanationScreen = true
-                                        showPaymentError(
-                                            raw = e.message,
-                                            throwable = e,
-                                            isMandateStep = true,
-                                            onRetry = { resumeSubscriptionFlow() },
-                                        )
-                                        Log.e("SUBSCRIPTION", "createSubscription failed", e)
-                                    }
-                                )
-                            }
-
                             CheckoutKind.MANDATE -> {
                                 releaseCheckoutFlight("mandate_payment_success")
                                 var subId = pendingSubscriptionId?.trim().orEmpty()
@@ -814,7 +539,6 @@ fun SubscriptionScreen(navController: NavController) {
                             showSetupExplanationScreen = false
                             showTrialSuccessScreen = false
                             currentCheckoutKind = CheckoutKind.NONE
-                            entryFeeSuccessHandled = false
                             mandateLaunchHandled = false
                             showPaymentError(
                                 raw = t.message,
@@ -827,41 +551,20 @@ fun SubscriptionScreen(navController: NavController) {
 
                 is PaymentResult.Error -> {
                     releaseCheckoutFlight("payment_error")
-                    val failedStep = when {
-                        result.checkoutKind == CheckoutKind.MANDATE -> "mandate"
-                        result.checkoutKind == CheckoutKind.ENTRY_FEE -> "entry_fee"
-                        currentCheckoutKind == CheckoutKind.MANDATE -> "mandate"
-                        else -> "entry_fee"
-                    }
-                    val isMandateStep = failedStep == "mandate"
-                    if (isMandateStep) {
-                        AnalyticsManager.track(
-                            "mandate_failed",
-                            mapOf("error_reason" to result.message)
-                        )
-                    } else {
-                        AnalyticsManager.track(
-                            "payment_failed",
-                            mapOf(
-                                "error_reason" to result.message,
-                                "step" to "entry_fee"
-                            )
-                        )
-                    }
+                    // Mandate is the only checkout in the flow, so every failure is a mandate step.
+                    AnalyticsManager.track(
+                        "mandate_failed",
+                        mapOf("error_reason" to result.message)
+                    )
                     showTrialSuccessScreen = false
                     currentCheckoutKind = CheckoutKind.NONE
-                    entryFeeSuccessHandled = false
                     mandatePaymentSuccessReceived = false
                     mandateLaunchHandled = false
-                    if (isMandateStep) {
-                        showSetupExplanationScreen = true
-                    } else {
-                        showSetupExplanationScreen = false
-                    }
+                    showSetupExplanationScreen = true
                     showPaymentError(
                         raw = result.message,
                         errorCode = result.errorCode.takeIf { it >= 0 },
-                        isMandateStep = isMandateStep,
+                        isMandateStep = true,
                         onRetry = { resumeSubscriptionFlow() },
                     )
                     Log.e("SUBSCRIPTION", "PaymentResult.Error: ${result.message}")
@@ -891,11 +594,9 @@ fun SubscriptionScreen(navController: NavController) {
                 isLoading = false
                 showSetupExplanationScreen = false
                 currentCheckoutKind = CheckoutKind.NONE
-                entryFeeSuccessHandled = false
                 mandateLaunchHandled = false
                 mandatePaymentSuccessReceived = false
                 pendingSubscriptionId = null
-                currentOrderId = null
                 AnalyticsManager.track("subscription_confirmed")
                 showTrialSuccessScreen = true
                 SubscriptionOrchestrator.reset()
@@ -913,7 +614,7 @@ fun SubscriptionScreen(navController: NavController) {
             }
 
             is SubscriptionState.MandatePending -> {
-                // ₹5 paid, subscription created, but AutoPay mandate never completed. Not a failure.
+                // Subscription created, but AutoPay mandate never completed. Not a failure.
                 // Retain the durable ticket (survives restart); offer a single resume action.
                 confirming = false
                 confirmingSoft = false
@@ -1070,7 +771,7 @@ fun SubscriptionScreen(navController: NavController) {
                 PremiumPricingHighlightCard()
 
                 Text(
-                    text = "You’ll pay ₹5 now to start your trial. Then you’ll confirm AutoPay for ₹99/month — no charge until after your 3-day trial.",
+                    text = "Start your 3-day free trial now by approving AutoPay for ₹99/month — you won’t be charged until your trial ends.",
                     color = PremiumSubscriptionColors.TextSecondary,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
@@ -1079,7 +780,7 @@ fun SubscriptionScreen(navController: NavController) {
                 )
 
                 PremiumGradientCtaButton(
-                    text = if (hasTrialPaid) "Continue AutoPay Setup" else "Start ₹5 Trial",
+                    text = if (hasTrialPaid) "Continue AutoPay Setup" else "Start Free Trial",
                     onClick = { resumeSubscriptionFlow() },
                     enabled = !showTrialSuccessScreen && !showSetupExplanationScreen,
                     loading = isLoading && !showSetupExplanationScreen
@@ -1218,7 +919,7 @@ fun SubscriptionScreen(navController: NavController) {
                 showMandatePending = false
                 AnalyticsManager.track("mandate_pending_resume_clicked")
                 // Resumes THIS subscription (create-subscription reuses created/authenticated) and
-                // opens ONLY the mandate checkout — never re-charges ₹5.
+                // opens ONLY the mandate checkout — never charges twice.
                 launchMandateCheckoutViaBackend(phoneForApi)
             },
         )
@@ -1288,10 +989,10 @@ private fun SubscriptionConfirmingOverlay(
 }
 
 /**
- * Shown when the ₹5 trial payment succeeded but the AutoPay mandate was never completed (the user
+ * Shown when the subscription was created but the AutoPay mandate was never completed (the user
  * exited/cancelled the mandate checkout). This is a clear resolvable state — not a failure and not
- * an endless "confirming". A single action resumes the SAME subscription's mandate checkout; ₹5 is
- * never charged again. The durable ticket keeps this state alive across restarts.
+ * an endless "confirming". A single action resumes the SAME subscription's mandate checkout; the
+ * user is never charged twice. The durable ticket keeps this state alive across restarts.
  */
 @Composable
 private fun MandatePendingOverlay(
@@ -1323,7 +1024,7 @@ private fun MandatePendingOverlay(
                 Text(text = "✅", fontSize = 34.sp)
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    text = "Trial payment received",
+                    text = "Finish AutoPay setup",
                     color = PremiumSubscriptionColors.TextPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -1331,8 +1032,8 @@ private fun MandatePendingOverlay(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "Your ₹5 payment succeeded, but AutoPay setup wasn’t finished. " +
-                        "Complete it now to activate your 3-day trial and premium access.",
+                    text = "Your subscription was created, but AutoPay setup wasn’t finished. " +
+                        "Complete it now to activate your 3-day free trial and premium access.",
                     color = PremiumSubscriptionColors.TextSecondary,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
@@ -1340,7 +1041,7 @@ private fun MandatePendingOverlay(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "You won’t be charged ₹5 again.",
+                    text = "You won’t be charged today.",
                     color = PremiumSubscriptionColors.Gold.copy(alpha = 0.95f),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
