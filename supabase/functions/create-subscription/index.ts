@@ -136,12 +136,6 @@ serve(async (req) => {
         headers: jsonHeaders,
       });
     }
-    if (!row.trial_paid) {
-      return new Response(
-        JSON.stringify({ error: "₹5 payment not verified. Verify payment first." }),
-        { status: 403, headers: jsonHeaders },
-      );
-    }
 
     const existingSubId =
       typeof row.razorpay_subscription_id === "string"
@@ -228,16 +222,16 @@ serve(async (req) => {
       }
     }
 
-    const trialEndIso = typeof row.trial_end === "string" ? row.trial_end : "";
-    const trialEndMs = Date.parse(trialEndIso);
-    if (!trialEndIso || Number.isNaN(trialEndMs)) {
-      return new Response(
-        JSON.stringify({ error: "trial_end missing. Start trial before creating subscription." }),
-        { status: 400, headers: jsonHeaders },
-      );
-    }
-
-    const startAtUnix = Math.max(Math.floor(trialEndMs / 1000), Math.floor(Date.now() / 1000) + 60);
+    // start_at anchors the first ₹99 charge to the end of the 3-day free trial. In the new
+    // onboarding the subscription is created BEFORE any trial exists, so we derive start_at purely
+    // from server time (now + 3 days) instead of the users.trial_end column. This stays backward
+    // compatible with the current app (where trial_end is also now + 3 days). Razorpay expects a
+    // future Unix timestamp in seconds; the +60s floor keeps it safely in the future.
+    const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
+    const startAtUnix = Math.max(
+      Math.floor((Date.now() + TRIAL_MS) / 1000),
+      Math.floor(Date.now() / 1000) + 60,
+    );
     const createRequestBody = {
       plan_id: planId,
       total_count: 120,
