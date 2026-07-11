@@ -315,30 +315,26 @@ fun ProfileScreen(navController: NavController) {
                             showCancelDialog = false
                             return@launch
                         }
-                        if (row.subscription_status?.equals("trial", ignoreCase = true) == true) {
-                            SupabaseClient.client
-                                .postgrest["users"]
-                                .update(SubscriptionStatusPatch(subscription_status = "cancel_requested")) {
-                                    filter { eq("phone_number", userPhone) }
-                                }
-                            AnalyticsManager.track("subscription_cancel_requested")
-                            profileMessage = ProfileMessage(
-                                "Trial cancelled. You will not be charged ₹99",
-                                isSuccess = true,
-                            )
-                            showCancelDialog = false
-                            refreshSubscriptionState()
-                            return@launch
-                        }
+                        val isTrialCancel =
+                            row.subscription_status?.equals("trial", ignoreCase = true) == true
                         val subId = row.razorpay_subscription_id
                         if (subId.isNullOrBlank()) {
                             profileMessage = ProfileMessage("No subscription on file", isSuccess = false)
                             return@launch
                         }
+                        // Single cancellation path: trial AND paid both go through the edge function
+                        // (Razorpay + DB). The client never writes subscription_status directly.
                         val result = SubscriptionApi.cancelSubscription(subId)
                         if (result.isSuccess) {
                             AnalyticsManager.track("subscription_cancel_requested")
-                            profileMessage = ProfileMessage("Cancellation requested", isSuccess = true)
+                            profileMessage = ProfileMessage(
+                                if (isTrialCancel) {
+                                    "Trial cancelled. You will not be charged ₹99"
+                                } else {
+                                    "Cancellation requested"
+                                },
+                                isSuccess = true,
+                            )
                             showCancelDialog = false
                             refreshSubscriptionState()
                         } else {

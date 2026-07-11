@@ -92,6 +92,40 @@ serve(async (req) => {
       return new Response("OK", { status: 200 });
     }
 
+    // Phase 2A: never let a delayed / out-of-order reactivation event revive a cancelled
+    // subscription. If the row is already cancel_requested/cancelled, skip these events entirely
+    // (no DB write). All other statuses continue to be processed exactly as before.
+    const REACTIVATION_EVENTS = new Set([
+      "subscription.authenticated",
+      "subscription.activated",
+      "subscription.charged",
+    ]);
+    const PROTECTED_STATUSES = new Set(["cancel_requested", "cancelled"]);
+    if (REACTIVATION_EVENTS.has(eventName)) {
+      const { data: existingRows, error: existingErr } = await supabase
+        .from("users")
+        .select("subscription_status")
+        .eq("razorpay_subscription_id", subId)
+        .limit(1);
+      if (existingErr) {
+        console.error("razorpay-webhook: reactivation guard lookup failed", existingErr);
+        return new Response(JSON.stringify({ error: existingErr.message }), { status: 500 });
+      }
+      const existingStatus = (existingRows?.[0]?.subscription_status ?? "").toLowerCase();
+      if (PROTECTED_STATUSES.has(existingStatus)) {
+        console.log(
+          JSON.stringify({
+            fn: "razorpay-webhook",
+            step: "skip_reactivation",
+            event: eventName,
+            subscription_id: subId,
+            existing_status: existingStatus,
+          }),
+        );
+        return new Response("OK", { status: 200 });
+      }
+    }
+
     if (eventName === "subscription.authenticated") {
       await supabase
         .from("users")
