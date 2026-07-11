@@ -551,7 +551,13 @@ fun SubscriptionScreen(navController: NavController) {
             mandateLaunchHandled = false
             return
         }
-        startCheckout()
+        // Phase 3C: mandate-first onboarding. Instead of the ₹5 entry-fee checkout (startCheckout →
+        // createOrder → verifyPayment → startTrial → createSubscription → mandate), Subscribe now
+        // enters the EXISTING mandate pipeline directly: createSubscription → openMandateCheckout →
+        // SubscriptionOrchestrator → activateTrial → Premium. All downstream handling is reused
+        // unchanged. The ₹5 path (startCheckout and its collector branch) is left intact but unused
+        // and is scheduled for removal in Phase 3D.
+        launchMandateCheckoutViaBackend(phone.trim())
     }
 
     retrySubscriptionHolder.action = { resumeSubscriptionFlow() }
