@@ -92,6 +92,73 @@ serve(async (req) => {
       return new Response("OK", { status: 200 });
     }
 
+    // Phase 2D: production-safe webhook idempotency (idempotent-consumer pattern).
+    // Razorpay uses at-least-once delivery, so the same event can arrive multiple times
+    // (retries / timeouts / concurrent deliveries). Razorpay delivers the unique per-event id in the
+    // `x-razorpay-event-id` HEADER — the webhook JSON body has NO top-level event.id (verified
+    // against Razorpay's official webhook docs), so that header is the idempotency key.
+    //
+    // The marker is recorded ONLY AFTER an event has been fully processed (see markProcessed below),
+    // never before. This guarantees:
+    //   - a true duplicate (already fully processed) is caught by the fast pre-check and skipped,
+    //   - a transient failure leaves NO marker, so Razorpay's retry re-processes the event,
+    //   - concurrent deliveries collapse to a single row via the event_id PRIMARY KEY.
+    // Every branch below is an idempotent state assignment with no irreversible side effects, so
+    // re-processing after a failure only re-applies the same final state.
+    const eventId =
+      req.headers.get("x-razorpay-event-id") ??
+      req.headers.get("X-Razorpay-Event-Id") ??
+      "";
+
+    // Fast duplicate check: if this event id was already recorded as processed, do nothing.
+    if (eventId) {
+      const { data: seenRows, error: seenErr } = await supabase
+        .from("razorpay_webhook_events")
+        .select("event_id")
+        .eq("event_id", eventId)
+        .limit(1);
+      if (seenErr) {
+        console.error("razorpay-webhook: idempotency lookup failed", seenErr);
+        return new Response(JSON.stringify({ error: seenErr.message }), { status: 500 });
+      }
+      if (seenRows && seenRows.length > 0) {
+        console.log(
+          JSON.stringify({
+            fn: "razorpay-webhook",
+            step: "skip_duplicate",
+            event: eventName,
+            event_id: eventId,
+            subscription_id: subId,
+          }),
+        );
+        return new Response("OK", { status: 200 });
+      }
+    } else {
+      console.warn(
+        "razorpay-webhook: missing x-razorpay-event-id header — processing without dedup",
+      );
+    }
+
+    // Records this event as processed. Uses INSERT ... ON CONFLICT DO NOTHING (upsert with
+    // ignoreDuplicates) so concurrent deliveries collapse to a single row without throwing — no
+    // reliance on catching a unique-violation. Called ONLY after a branch finishes successfully,
+    // never on the failure/500 paths, so a partial failure leaves no marker and stays retryable.
+    const markProcessed = async () => {
+      if (!eventId) return;
+      const { error: markErr } = await supabase
+        .from("razorpay_webhook_events")
+        .upsert(
+          { event_id: eventId, event_type: eventName, subscription_id: subId },
+          { onConflict: "event_id", ignoreDuplicates: true },
+        );
+      if (markErr) {
+        // Processing already succeeded and the DB state is correct; a failed marker write must not
+        // downgrade a success to 500 (that would trigger a retry which only re-applies the same
+        // idempotent state). Log for observability — a later duplicate simply re-processes safely.
+        console.error("razorpay-webhook: mark-processed upsert failed", markErr);
+      }
+    };
+
     // Phase 2A: never let a delayed / out-of-order reactivation event revive a cancelled
     // subscription. If the row is already cancel_requested/cancelled, skip these events entirely
     // (no DB write). All other statuses continue to be processed exactly as before.
@@ -122,6 +189,7 @@ serve(async (req) => {
             existing_status: existingStatus,
           }),
         );
+        await markProcessed();
         return new Response("OK", { status: 200 });
       }
     }
@@ -134,6 +202,7 @@ serve(async (req) => {
           subscription_status: "authenticated",
         })
         .eq("razorpay_subscription_id", subId);
+      await markProcessed();
       return new Response("OK", { status: 200 });
     }
 
@@ -148,6 +217,7 @@ serve(async (req) => {
       };
       if (periodEnd) row.current_period_end = periodEnd;
       await supabase.from("users").update(row).eq("razorpay_subscription_id", subId);
+      await markProcessed();
       return new Response("OK", { status: 200 });
     }
 
@@ -207,6 +277,7 @@ serve(async (req) => {
         .eq("razorpay_subscription_id", subId);
     }
 
+    await markProcessed();
     return new Response("OK", { status: 200 });
   } catch (e) {
     console.error("razorpay-webhook", e);
