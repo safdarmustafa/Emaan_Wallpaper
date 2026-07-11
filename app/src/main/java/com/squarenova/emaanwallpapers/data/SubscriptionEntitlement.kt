@@ -7,6 +7,7 @@ package com.squarenova.emaanwallpapers.data
  * - [subscription_status] == "active"
  * - [subscription_status] == "trial" with a future [trialEndIso]
  * - [subscription_status] == "cancel_requested" with a future [trialEndIso] (access until trial ends)
+ * - [subscription_status] == "cancelled" with a future [trialEndIso] (access until trial ends)
  *
  * Does not depend on is_subscribed or trial_paid.
  */
@@ -21,7 +22,7 @@ object SubscriptionEntitlement {
         val trialStillActive = SupabaseTimestampParser.isInFuture(trialEndIso)
         val result = when (status) {
             "active" -> true
-            "trial", "cancel_requested" -> trialStillActive
+            "trial", "cancel_requested", "cancelled" -> trialStillActive
             else -> false
         }
         EntitlementDebugLog.check(

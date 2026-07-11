@@ -159,6 +159,9 @@ fun RingtoneScreen(
                     failureMessage = "Permission not granted."
                     showFailure = true
                 }
+            } else if (event == Lifecycle.Event.ON_STOP) {
+                // App left the foreground — stop only the ringtone preview audio immediately.
+                audioPlayerManager.stop()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
