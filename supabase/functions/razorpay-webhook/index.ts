@@ -165,13 +165,35 @@ serve(async (req) => {
 
       await supabase.from("users").update(row).eq("razorpay_subscription_id", subId);
     } else if (eventName === "subscription.cancelled") {
+      // Phase 2B: make webhook-initiated cancellation write the same metadata as the
+      // cancel-subscription Edge Function. Preserve an existing cancelled_at (e.g. set when the
+      // user cancelled in-app) and only populate it with the current server timestamp when missing.
+      const { data: existingRows } = await supabase
+        .from("users")
+        .select("cancelled_at")
+        .eq("razorpay_subscription_id", subId)
+        .limit(1);
+      const existingCancelledAt =
+        typeof existingRows?.[0]?.cancelled_at === "string" && existingRows[0].cancelled_at !== ""
+          ? existingRows[0].cancelled_at
+          : null;
+      const cancelledAt = existingCancelledAt ?? new Date().toISOString();
       await supabase
         .from("users")
         .update({
           is_subscribed: false,
           subscription_status: "cancelled",
+          cancelled_at: cancelledAt,
         })
         .eq("razorpay_subscription_id", subId);
+      console.log(
+        JSON.stringify({
+          fn: "razorpay-webhook",
+          step: "subscription_cancelled",
+          subscription_id: subId,
+          cancelled_at: cancelledAt,
+        }),
+      );
     } else if (
       eventName === "subscription.halted" ||
       eventName === "subscription.completed"
