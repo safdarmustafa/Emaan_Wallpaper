@@ -20,7 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Help
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
@@ -297,6 +300,67 @@ private fun ProfileStatusChip(
     }
 }
 
+private val ProfileStatusSetup = Color(0xFF2563EB)
+
+/** Display-only labels and chip colors for [ProfileSubscriptionCard]. */
+private data class SubscriptionCardDisplay(
+    val statusLabel: String,
+    val statusAccent: Color,
+    val statusContainer: Color,
+)
+
+private fun resolveSubscriptionCardDisplay(
+    subscriptionStatus: String?,
+    trialEndIso: String?,
+    hasPremium: Boolean,
+): SubscriptionCardDisplay {
+    val status = subscriptionStatus?.trim()?.lowercase().orEmpty()
+    val trialActive = SupabaseTimestampParser.isInFuture(trialEndIso)
+    return when {
+        status == "trial" && trialActive -> SubscriptionCardDisplay(
+            statusLabel = "Free Trial Active",
+            statusAccent = ProfileStatusTrial,
+            statusContainer = ProfileStatusTrial.copy(alpha = 0.12f),
+        )
+        status == "active" -> SubscriptionCardDisplay(
+            statusLabel = "Premium Active",
+            statusAccent = ProfileStatusPremium,
+            statusContainer = ProfileStatusPremium.copy(alpha = 0.12f),
+        )
+        (status == "cancel_requested" || status == "cancelled") && hasPremium && trialActive ->
+            SubscriptionCardDisplay(
+                statusLabel = "Ending Soon",
+                statusAccent = ProfileStatusEnding,
+                statusContainer = ProfileStatusEnding.copy(alpha = 0.12f),
+            )
+        status == "authenticated" || status == "created" -> SubscriptionCardDisplay(
+            statusLabel = "Setting Up AutoPay",
+            statusAccent = ProfileStatusSetup,
+            statusContainer = ProfileStatusSetup.copy(alpha = 0.12f),
+        )
+        status == "pending" -> SubscriptionCardDisplay(
+            statusLabel = "Waiting for Confirmation",
+            statusAccent = ProfileStatusSetup,
+            statusContainer = ProfileStatusSetup.copy(alpha = 0.12f),
+        )
+        status == "expired" || (status == "trial" && !trialActive) -> SubscriptionCardDisplay(
+            statusLabel = "Expired",
+            statusAccent = ProfileStatusExpired,
+            statusContainer = ProfileStatusExpired.copy(alpha = 0.12f),
+        )
+        hasPremium -> SubscriptionCardDisplay(
+            statusLabel = "Premium Active",
+            statusAccent = ProfileStatusPremium,
+            statusContainer = ProfileStatusPremium.copy(alpha = 0.12f),
+        )
+        else -> SubscriptionCardDisplay(
+            statusLabel = "Setting Up AutoPay",
+            statusAccent = ProfileStatusSetup,
+            statusContainer = ProfileStatusSetup.copy(alpha = 0.12f),
+        )
+    }
+}
+
 @Composable
 fun ProfileSubscriptionCard(
     subscriptionStatus: String?,
@@ -315,8 +379,14 @@ fun ProfileSubscriptionCard(
 
     if (!showCard) return
 
-    val plan = resolveProfilePlanVisual(subscriptionStatus, trialEndIso)
     val trialEndFormatted = formatProfileDate(trialEndIso)
+    val trialActive = SupabaseTimestampParser.isInFuture(trialEndIso)
+    val display = resolveSubscriptionCardDisplay(subscriptionStatus, trialEndIso, hasPremium)
+    val isTrialActive = status == "trial" && trialActive
+    val isActivePremium = status == "active"
+    val isEndingSoonWithAccess =
+        (status == "cancel_requested" || status == "cancelled") && hasPremium && trialActive
+    val isExpired = status == "expired" || (status == "trial" && !trialActive)
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -327,69 +397,140 @@ fun ProfileSubscriptionCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
+                .padding(horizontal = 22.dp, vertical = 20.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = plan.container,
-                    modifier = Modifier.size(48.dp),
+                    color = display.statusContainer,
+                    modifier = Modifier.size(50.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.WorkspacePremium,
                             contentDescription = null,
-                            tint = plan.accent,
-                            modifier = Modifier.size(26.dp),
+                            tint = display.statusAccent,
+                            modifier = Modifier.size(28.dp),
                         )
                     }
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Current Plan",
+                        text = "Premium Membership",
                         style = MaterialTheme.typography.labelMedium,
                         color = AppTextSecondary,
+                        fontWeight = FontWeight.Medium,
                     )
-                    Text(
-                        text = plan.label,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = plan.accent,
+                    Spacer(modifier = Modifier.height(6.dp))
+                    ProfileStatusChip(
+                        text = display.statusLabel,
+                        accent = display.statusAccent,
+                        container = display.statusContainer,
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
             HorizontalDivider(color = AppDivider)
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-            if (!trialEndFormatted.isNullOrBlank() &&
-                plan in listOf(ProfilePlanVisual.Trial, ProfilePlanVisual.EndingSoon, ProfilePlanVisual.Expired)
-            ) {
-                ProfileSubscriptionDetailRow(
-                    label = if (plan == ProfilePlanVisual.EndingSoon) "Access until" else "Trial ends",
-                    value = trialEndFormatted,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+            when {
+                isTrialActive -> {
+                    ProfileSubscriptionDetailRow(
+                        label = "Trial Ends",
+                        value = trialEndFormatted ?: "—",
+                        icon = Icons.Default.CalendarToday,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ProfileSubscriptionDetailRow(
+                        label = "Next Renewal",
+                        value = trialEndFormatted ?: "—",
+                        icon = Icons.Default.CalendarToday,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ProfileSubscriptionDetailRow(
+                        label = "Auto Renewal",
+                        value = "On",
+                        icon = Icons.Default.Autorenew,
+                        valueColor = ProfileStatusPremium,
+                    )
+                }
+
+                isEndingSoonWithAccess -> {
+                    ProfileSubscriptionDetailRow(
+                        label = "Access Until",
+                        value = trialEndFormatted ?: "—",
+                        icon = Icons.Default.CalendarToday,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ProfileSubscriptionDetailRow(
+                        label = "Auto Renewal",
+                        value = "Off",
+                        icon = Icons.Default.Cancel,
+                        valueColor = ProfileStatusExpired,
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    ProfileSubscriptionInfoNote(
+                        text = buildString {
+                            append("You won't be charged again. Premium access continues until ")
+                            append(trialEndFormatted ?: "your trial ends")
+                            append('.')
+                        },
+                    )
+                }
+
+                isActivePremium -> {
+                    ProfileSubscriptionDetailRow(
+                        label = "Next Renewal",
+                        value = trialEndFormatted ?: "Monthly · ₹99",
+                        icon = Icons.Default.CalendarToday,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ProfileSubscriptionDetailRow(
+                        label = "Plan",
+                        value = "₹99 / month",
+                        icon = Icons.Default.WorkspacePremium,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ProfileSubscriptionDetailRow(
+                        label = "Auto Renewal",
+                        value = "On",
+                        icon = Icons.Default.Autorenew,
+                        valueColor = ProfileStatusPremium,
+                    )
+                }
+
+                isExpired -> {
+                    ProfileSubscriptionInfoNote(
+                        text = "Premium access has ended.",
+                        icon = Icons.Default.Info,
+                        accent = ProfileStatusExpired,
+                    )
+                }
+
+                else -> {
+                    if (!trialEndFormatted.isNullOrBlank() && hasPremium) {
+                        ProfileSubscriptionDetailRow(
+                            label = "Access Until",
+                            value = trialEndFormatted,
+                            icon = Icons.Default.CalendarToday,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+                    ProfileSubscriptionInfoNote(
+                        text = when (status) {
+                            "authenticated", "created" ->
+                                "Complete AutoPay setup to activate your premium membership."
+                            "pending" ->
+                                "We're confirming your subscription. This usually takes a moment."
+                            else -> "Manage your subscription details below."
+                        },
+                    )
+                }
             }
 
-            if (plan == ProfilePlanVisual.Premium) {
-                ProfileSubscriptionDetailRow(
-                    label = "Next billing",
-                    value = trialEndFormatted ?: "Monthly · ₹99",
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            ProfileSubscriptionDetailRow(
-                label = "Status",
-                value = subscriptionStatus?.replaceFirstChar {
-                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                } ?: "—",
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             Button(
                 onClick = onManageSubscription,
@@ -410,21 +551,66 @@ fun ProfileSubscriptionCard(
 }
 
 @Composable
-private fun ProfileSubscriptionDetailRow(label: String, value: String) {
+private fun ProfileSubscriptionInfoNote(
+    text: String,
+    icon: ImageVector = Icons.Default.Info,
+    accent: Color = ProfileStatusEnding,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(accent.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = AppTextSecondary,
+            lineHeight = 18.sp,
+        )
+    }
+}
+
+@Composable
+private fun ProfileSubscriptionDetailRow(
+    label: String,
+    value: String,
+    icon: ImageVector? = null,
+    valueColor: Color = AppTextPrimary,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = AppTextTertiary,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = AppTextSecondary,
+            modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
-            color = AppTextPrimary,
+            color = valueColor,
+            textAlign = TextAlign.End,
         )
     }
 }
