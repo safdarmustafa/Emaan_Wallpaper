@@ -307,8 +307,8 @@ fun ProfileSubscriptionCard(
     val status = subscriptionStatus?.trim()?.lowercase().orEmpty()
     val hasPremium = SubscriptionEntitlement.hasPremiumAccess(subscriptionStatus, trialEndIso)
     val showCard = when {
-        status == "cancelled" -> false
         hasPremium -> true
+        status == "cancelled" -> false
         status.isNotEmpty() -> true
         else -> false
     }
