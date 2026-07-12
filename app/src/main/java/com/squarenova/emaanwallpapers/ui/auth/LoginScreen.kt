@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.network.OtpApi
 import com.squarenova.emaanwallpapers.theme.BackgroundCream
@@ -230,7 +231,7 @@ fun LoginScreen(navController: NavController) {
                     Button(
                         onClick = {
                             if (isLoading) return@Button
-                            AnalyticsManager.trackEvent("Login - Continue Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.LOGIN_CONTINUE_TAPPED)
 
                             val cleanNumber = phoneNumber.filter { it.isDigit() }
 

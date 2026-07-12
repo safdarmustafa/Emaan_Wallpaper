@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import android.util.Log
 import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -200,7 +201,7 @@ fun SplashScreen(navController: NavController) {
                                     "expired" -> "expired"
                                     else -> "not_subscribed"
                                 }
-                                AnalyticsManager.track("paywall_shown", mapOf("reason" to reason))
+                                AnalyticsManager.track(AnalyticsEvents.PAYWALL_SHOWN, mapOf("reason" to reason))
                                 EntitlementDebugLog.navigation(
                                     source = "SplashScreen:mandate_refresh",
                                     destination = "subscription",
@@ -226,7 +227,7 @@ fun SplashScreen(navController: NavController) {
                                     popUpTo("splash") { inclusive = true }
                                 }
                             } else {
-                                AnalyticsManager.track("paywall_shown", mapOf("reason" to "not_subscribed"))
+                                AnalyticsManager.track(AnalyticsEvents.PAYWALL_SHOWN, mapOf("reason" to "not_subscribed"))
                                 EntitlementDebugLog.navigation(
                                     source = "SplashScreen:default",
                                     destination = "subscription",

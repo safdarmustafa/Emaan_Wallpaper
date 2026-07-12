@@ -1,11 +1,16 @@
 package com.squarenova.emaanwallpapers.analytics
 
 import android.content.Context
+import android.util.Log
+import com.facebook.FacebookSdk
+import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.analytics.provider.MixpanelProvider
 import java.util.concurrent.ConcurrentHashMap
 import com.squarenova.emaanwallpapers.analytics.providers.MetaAnalyticsProvider
 
 object AnalyticsManager {
+
+    private const val TAG = "AnalyticsManager"
 
     private val firedOnceKeys = ConcurrentHashMap.newKeySet<String>()
 
@@ -25,15 +30,23 @@ object AnalyticsManager {
             mixpanelToken.isNotBlank() &&
             mixpanelToken != "YOUR_MIXPANEL_PROJECT_TOKEN"
         ) {
-
             providers.add(
                 MixpanelProvider(
                     context = context,
                     token = mixpanelToken
                 )
             )
-            providers.add(
-                MetaAnalyticsProvider(context)
+        }
+
+        if (FacebookSdk.isInitialized()) {
+            providers.add(MetaAnalyticsProvider(context))
+        }
+
+        if (providers.isEmpty() && BuildConfig.DEBUG) {
+            Log.d(
+                TAG,
+                "Analytics providers disabled — Mixpanel token missing/placeholder and/or " +
+                    "Facebook SDK not initialized. track/identify/flush will no-op.",
             )
         }
     }
@@ -44,7 +57,7 @@ object AnalyticsManager {
     fun trackScreen(screenName: String) {
 
         track(
-            eventName = "screen_viewed",
+            eventName = AnalyticsEvents.SCREEN_VIEWED,
             props = mapOf(
                 "screen_name" to screenName
             )

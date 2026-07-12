@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
@@ -229,7 +230,7 @@ fun ProfileScreen(navController: NavController) {
     val canCancelSubscription = hasPremium && statusLower != "cancel_requested"
 
     fun showComingSoon(feature: String) {
-        AnalyticsManager.trackEvent("Profile - $feature Tapped")
+        AnalyticsManager.trackEvent(AnalyticsEvents.profileFeatureTapped(feature))
         profileMessage = ProfileMessage("$feature coming soon", isSuccess = true)
     }
 
@@ -238,7 +239,7 @@ fun ProfileScreen(navController: NavController) {
             user = user,
             isSaving = isSaving,
             onDismiss = {
-                AnalyticsManager.trackEvent("Profile - Edit Dialog Cancel Tapped")
+                AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_EDIT_DIALOG_CANCEL_TAPPED)
                 showEditDialog = false
             },
             onSave = { updatedUser ->
@@ -275,7 +276,7 @@ fun ProfileScreen(navController: NavController) {
     if (showAboutDialog) {
         AboutAppDialog(
             onDismiss = {
-                AnalyticsManager.trackEvent("Profile - About Dialog Dismissed")
+                AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_ABOUT_DIALOG_DISMISSED)
                 showAboutDialog = false
             },
         )
@@ -326,7 +327,11 @@ fun ProfileScreen(navController: NavController) {
                         // (Razorpay + DB). The client never writes subscription_status directly.
                         val result = SubscriptionApi.cancelSubscription(subId)
                         if (result.isSuccess) {
-                            AnalyticsManager.track("subscription_cancel_requested")
+                            AnalyticsManager.track(AnalyticsEvents.SUBSCRIPTION_CANCEL_REQUESTED)
+                            AnalyticsManager.trackOnce(
+                                key = "subscription_cancelled:$subId",
+                                eventName = AnalyticsEvents.SUBSCRIPTION_CANCELLED,
+                            )
                             profileMessage = ProfileMessage(
                                 if (isTrialCancel) {
                                     "Trial cancelled. You will not be charged ₹99"
@@ -547,7 +552,7 @@ fun ProfileScreen(navController: NavController) {
         ) {
             ProfileTopBar(
                 onBack = {
-                    AnalyticsManager.trackEvent("Profile - Back Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_BACK_TAPPED)
                     navController.popBackStack()
                 },
                 modifier = Modifier.statusBarsPadding(),
@@ -563,11 +568,11 @@ fun ProfileScreen(navController: NavController) {
                 subscriptionStatus = subscriptionStatus,
                 trialEndIso = trialEnd,
                 onEditProfile = {
-                    AnalyticsManager.trackEvent("Profile - Edit Profile Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_EDIT_PROFILE_TAPPED)
                     showEditDialog = true
                 },
                 onAvatarClick = {
-                    AnalyticsManager.trackEvent("Profile - Avatar Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_AVATAR_TAPPED)
                     galleryLauncher.launch("image/*")
                 },
             )
@@ -578,7 +583,7 @@ fun ProfileScreen(navController: NavController) {
                 subscriptionStatus = subscriptionStatus,
                 trialEndIso = trialEnd,
                 onManageSubscription = {
-                    AnalyticsManager.trackEvent("Profile - Manage Subscription Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_MANAGE_SUBSCRIPTION_TAPPED)
                     when {
                         statusLower == "cancel_requested" -> profileMessage = ProfileMessage(
                             "Cancellation already recorded",
@@ -600,7 +605,7 @@ fun ProfileScreen(navController: NavController) {
                         subtitle = "Update your name and photo",
                         icon = Icons.Default.Person,
                         onClick = {
-                            AnalyticsManager.trackEvent("Profile - Edit Profile Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_EDIT_PROFILE_TAPPED)
                             showEditDialog = true
                         },
                     ),
@@ -609,7 +614,7 @@ fun ProfileScreen(navController: NavController) {
                         subtitle = "About Emaan Wallpapers · v${BuildConfig.VERSION_NAME}",
                         icon = Icons.Default.Info,
                         onClick = {
-                            AnalyticsManager.trackEvent("Profile - About App Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_ABOUT_APP_TAPPED)
                             showAboutDialog = true
                         },
                     ),
@@ -618,7 +623,7 @@ fun ProfileScreen(navController: NavController) {
                         subtitle = "Invite friends to Emaan Wallpapers",
                         icon = Icons.Default.Share,
                         onClick = {
-                            AnalyticsManager.trackEvent("Profile - Share App Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_SHARE_APP_TAPPED)
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(
@@ -642,7 +647,7 @@ fun ProfileScreen(navController: NavController) {
                         icon = Icons.Default.Security,
                         opensExternal = true,
                         onClick = {
-                            AnalyticsManager.trackEvent("Profile - Privacy Policy Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_PRIVACY_POLICY_TAPPED)
                             LegalUrlOpener.openPrivacyPolicy(context)
                         },
                     ),
@@ -652,7 +657,7 @@ fun ProfileScreen(navController: NavController) {
                         icon = Icons.Default.Gavel,
                         opensExternal = true,
                         onClick = {
-                            AnalyticsManager.trackEvent("Profile - Terms Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_TERMS_TAPPED)
                             LegalUrlOpener.openTermsAndConditions(context)
                         },
                     ),
@@ -662,7 +667,7 @@ fun ProfileScreen(navController: NavController) {
                         icon = Icons.Default.WorkspacePremium,
                         opensExternal = true,
                         onClick = {
-                            AnalyticsManager.trackEvent("Profile - Subscription Disclosure Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_SUBSCRIPTION_DISCLOSURE_TAPPED)
                             LegalUrlOpener.openSubscriptionDisclosure(context)
                         },
                     ),
@@ -671,7 +676,7 @@ fun ProfileScreen(navController: NavController) {
                         subtitle = LegalUrls.SUPPORT_EMAIL,
                         icon = Icons.AutoMirrored.Filled.Help,
                         onClick = {
-                            AnalyticsManager.trackEvent("Profile - Contact Us Tapped")
+                            AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_CONTACT_US_TAPPED)
                             navController.navigate("contact_us")
                         },
                     ),
@@ -683,7 +688,7 @@ fun ProfileScreen(navController: NavController) {
             ProfilePremiumUpsellCard(
                 visible = !hasPremium,
                 onUpgrade = {
-                    AnalyticsManager.trackEvent("Profile - Upgrade Premium Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_UPGRADE_PREMIUM_TAPPED)
                     navController.navigate("subscription") { launchSingleTop = true }
                 },
             )
@@ -692,7 +697,7 @@ fun ProfileScreen(navController: NavController) {
 
             ProfileDangerZoneSection(
                 onLogout = {
-                    AnalyticsManager.trackEvent("Profile - Logout Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_LOGOUT_TAPPED)
                     scope.launch {
                         AnalyticsManager.reset()
                         SubscriptionOrchestrator.onLogout()
@@ -701,7 +706,7 @@ fun ProfileScreen(navController: NavController) {
                     }
                 },
                 onDeleteAccount = {
-                    AnalyticsManager.trackEvent("Profile - Delete Account Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_DELETE_ACCOUNT_TAPPED)
                     showDeleteDialog = true
                 },
             )

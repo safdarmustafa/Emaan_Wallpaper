@@ -50,6 +50,7 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
 import com.squarenova.emaanwallpapers.theme.AppTextSecondary
@@ -260,8 +261,8 @@ fun HomeScreen(navController: NavController) {
                 "expired" -> "expired"
                 else -> "not_subscribed"
             }
-            AnalyticsManager.track("home_access_blocked", mapOf("reason" to reason))
-            AnalyticsManager.track("paywall_shown", mapOf("reason" to reason))
+            AnalyticsManager.track(AnalyticsEvents.HOME_ACCESS_BLOCKED, mapOf("reason" to reason))
+            AnalyticsManager.track(AnalyticsEvents.PAYWALL_SHOWN, mapOf("reason" to reason))
             Log.d(
                 "HOME_ACCESS_GUARD",
                 "Redirecting: status=${user?.subscription_status} trialEnd=${user?.trial_end}"
@@ -324,13 +325,8 @@ fun HomeScreen(navController: NavController) {
         if (status == lastTrackedSubscriptionStatus) return@LaunchedEffect
         lastTrackedSubscriptionStatus = status
         when (status) {
-            "active" -> AnalyticsManager.track(
-                "subscription_activated",
-                mapOf("current_period_end" to user?.current_period_end)
-            )
-            "cancelled" -> AnalyticsManager.track("subscription_cancelled")
-            "expired" -> AnalyticsManager.track("trial_expired")
-            "halted" -> AnalyticsManager.track("subscription_charge_failed")
+            "expired" -> AnalyticsManager.track(AnalyticsEvents.TRIAL_EXPIRED)
+            "halted" -> AnalyticsManager.track(AnalyticsEvents.SUBSCRIPTION_CHARGE_FAILED)
         }
     }
 

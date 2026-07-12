@@ -54,6 +54,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.razorpay.Checkout
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
@@ -509,7 +510,7 @@ fun SubscriptionScreen(navController: NavController) {
                                 pendingSubscriptionId = subId
                                 Log.i("SUBSCRIPTION", "MANDATE success — handing off to durable confirmation")
                                 AnalyticsManager.track(
-                                    "mandate_success",
+                                    AnalyticsEvents.MANDATE_SUCCESS,
                                     mapOf("subscription_id" to subId)
                                 )
                                 // Hand the whole verify → activate → sync lifecycle to the orchestrator.
@@ -553,7 +554,7 @@ fun SubscriptionScreen(navController: NavController) {
                     releaseCheckoutFlight("payment_error")
                     // Mandate is the only checkout in the flow, so every failure is a mandate step.
                     AnalyticsManager.track(
-                        "mandate_failed",
+                        AnalyticsEvents.MANDATE_FAILED,
                         mapOf("error_reason" to result.message)
                     )
                     showTrialSuccessScreen = false
@@ -597,7 +598,7 @@ fun SubscriptionScreen(navController: NavController) {
                 mandateLaunchHandled = false
                 mandatePaymentSuccessReceived = false
                 pendingSubscriptionId = null
-                AnalyticsManager.track("subscription_confirmed")
+                AnalyticsManager.track(AnalyticsEvents.SUBSCRIPTION_CONFIRMED)
                 showTrialSuccessScreen = true
                 SubscriptionOrchestrator.reset()
             }
@@ -798,7 +799,7 @@ fun SubscriptionScreen(navController: NavController) {
 
                 TextButton(
                     onClick = {
-                        AnalyticsManager.trackEvent("Subscription - Disclosure Link Tapped")
+                        AnalyticsManager.trackEvent(AnalyticsEvents.SUBSCRIPTION_DISCLOSURE_LINK_TAPPED)
                         LegalUrlOpener.openSubscriptionDisclosure(context)
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -822,12 +823,12 @@ fun SubscriptionScreen(navController: NavController) {
                 mandateLaunchHandled = true
                 isLoading = true
                 if (mandatePaymentSuccessReceived) {
-                    AnalyticsManager.track("mandate_retry_clicked")
+                    AnalyticsManager.track(AnalyticsEvents.MANDATE_RETRY_CLICKED)
                     mandateLaunchHandled = false
                     launchMandateCheckoutViaBackend(phone.trim())
                     return@SubscriptionSetupFullScreenOverlay
                 }
-                AnalyticsManager.track("mandate_initiated")
+                AnalyticsManager.track(AnalyticsEvents.MANDATE_INITIATED)
                 val phoneForApi = phone.trim()
                 if (phoneForApi.isBlank()) {
                     mandateLaunchHandled = false
@@ -917,7 +918,7 @@ fun SubscriptionScreen(navController: NavController) {
                     return@MandatePendingOverlay
                 }
                 showMandatePending = false
-                AnalyticsManager.track("mandate_pending_resume_clicked")
+                AnalyticsManager.track(AnalyticsEvents.MANDATE_PENDING_RESUME_CLICKED)
                 // Resumes THIS subscription (create-subscription reuses created/authenticated) and
                 // opens ONLY the mandate checkout — never charges twice.
                 launchMandateCheckoutViaBackend(phoneForApi)

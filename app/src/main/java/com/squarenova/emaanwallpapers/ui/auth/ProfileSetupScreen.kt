@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
@@ -138,7 +139,7 @@ fun ProfileSetupScreen(navController: NavController) {
             // ✅ Save Button
             Button(
                 onClick = {
-                    AnalyticsManager.trackEvent("Profile Setup - Save & Continue Tapped")
+                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_SETUP_SAVE_CONTINUE_TAPPED)
                     // Validate required fields
                     if (firstName.trim().isEmpty()) {
                         errorMessage = "First name is required"
@@ -171,6 +172,8 @@ fun ProfileSetupScreen(navController: NavController) {
                                         last_name = lastName.trim()
                                     )
                                 )
+
+                            AnalyticsManager.track(AnalyticsEvents.SIGN_UP)
 
                             // ✅ Mark profile as completed and go home
                             dataStoreManager.setProfileCompleted()
@@ -241,7 +244,7 @@ fun ProfileSetupScreen(navController: NavController) {
 
             // Skip option (optional — remove if you want to force setup)
             TextButton(onClick = {
-                AnalyticsManager.trackEvent("Profile Setup - Skip Tapped")
+                AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_SETUP_SKIP_TAPPED)
                 scope.launch {
                     val phone = dataStoreManager.phoneNumber.firstOrNull()
                     if (!phone.isNullOrEmpty()) {

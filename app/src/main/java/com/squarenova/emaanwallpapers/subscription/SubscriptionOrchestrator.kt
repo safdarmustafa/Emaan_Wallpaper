@@ -1,6 +1,8 @@
 package com.squarenova.emaanwallpapers.subscription
 
 import android.content.Context
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -237,6 +239,10 @@ object SubscriptionOrchestrator {
         // Tracks a successful activate-trial anywhere in this flow so we never call it twice.
         // Safe: activate-trial is idempotent server-side; skipping duplicates only removes latency.
         var activateTrialSucceededInFlow = fastPath.activateTrialSucceeded
+        if (activateTrialSucceededInFlow) {
+            emitTrialStartedIfApplicable(subId)
+            emitSubscriptionActivatedIfApplicable(subId)
+        }
         if (fastPath.hasPremium) {
             succeed(store, subId)
             return
@@ -338,6 +344,10 @@ object SubscriptionOrchestrator {
             if (syncResult.activateTrialSucceeded) {
                 activateTrialSucceededInFlow = true
             }
+            if (activateTrialSucceededInFlow) {
+                emitTrialStartedIfApplicable(subId)
+                emitSubscriptionActivatedIfApplicable(subId)
+            }
             if (syncResult.hasPremium) {
                 succeed(store, subId)
                 return
@@ -351,6 +361,32 @@ object SubscriptionOrchestrator {
 
     private fun stepDelay(extended: Boolean, backoff: Long): Long =
         if (extended) EXTENDED_INTERVAL_MS else backoff
+
+    /**
+     * Analytics only: emit trial_started after activate-trial succeeded and entitlement status is
+     * trial. [AnalyticsManager.trackOnce] dedupes within this process (confirmation retries/loops).
+     */
+    private fun emitTrialStartedIfApplicable(subscriptionId: String) {
+        val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
+        if (status != "trial") return
+        AnalyticsManager.trackOnce(
+            key = "trial_started:$subscriptionId",
+            eventName = AnalyticsEvents.TRIAL_STARTED,
+        )
+    }
+
+    /**
+     * Analytics only: emit subscription_activated after activate-trial succeeded and entitlement
+     * status is paid "active" (never trial). trackOnce dedupes within this process.
+     */
+    private fun emitSubscriptionActivatedIfApplicable(subscriptionId: String) {
+        val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
+        if (status != "active") return
+        AnalyticsManager.trackOnce(
+            key = "subscription_activated:$subscriptionId",
+            eventName = AnalyticsEvents.SUBSCRIPTION_ACTIVATED,
+        )
+    }
 
     private suspend fun succeed(store: ConfirmationTicketStore?, subId: String) {
         store?.clear()

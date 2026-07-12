@@ -9,6 +9,7 @@ import com.facebook.appevents.AppEventsLogger
 import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.ktx.Firebase
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionManager
@@ -68,8 +69,10 @@ class App : Application() {
         )
 
         try {
-            AnalyticsManager.trackEvent("App Launched")
-            AnalyticsManager.track("meta_test_event")
+            AnalyticsManager.trackEvent(AnalyticsEvents.APP_LAUNCHED)
+            if (BuildConfig.DEBUG) {
+                AnalyticsManager.track(AnalyticsEvents.META_TEST_EVENT)
+            }
             AnalyticsManager.flush()
         } catch (_: Exception) {
             // Analytics must never block or crash app startup.

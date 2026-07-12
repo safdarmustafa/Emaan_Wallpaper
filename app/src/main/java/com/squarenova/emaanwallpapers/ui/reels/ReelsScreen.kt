@@ -49,6 +49,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
@@ -182,7 +183,7 @@ fun ReelsScreen(navController: NavController) {
         val hasPremium = UserSubscriptionSyncManager(dataStoreManager)
             .syncUserSubscription(phone)
         if (!hasPremium) {
-            AnalyticsManager.track("reels_access_blocked", mapOf("reason" to "not_subscribed"))
+            AnalyticsManager.track(AnalyticsEvents.REELS_ACCESS_BLOCKED, mapOf("reason" to "not_subscribed"))
             navController.navigate("subscription") {
                 popUpTo("reels") { inclusive = true }
             }
@@ -279,17 +280,17 @@ fun ReelsScreen(navController: NavController) {
                         reel = reels[page],
                         isVisible = pagerState.currentPage == page,
                         onDownload = {
-                            AnalyticsManager.trackEvent("Reels - Download Tapped", mapOf("reel_id" to reels[page].id))
+                            AnalyticsManager.trackEvent(AnalyticsEvents.REELS_DOWNLOAD_TAPPED, mapOf("reel_id" to reels[page].id))
                             downloadVideo(context, reels[page].url, reels[page].title)
                             toastMessage = "Downloading... check notifications 📥"
                         },
                         onShare = {
-                            AnalyticsManager.trackEvent("Reels - Share Tapped", mapOf("reel_id" to reels[page].id))
+                            AnalyticsManager.trackEvent(AnalyticsEvents.REELS_SHARE_TAPPED, mapOf("reel_id" to reels[page].id))
                             shareVideo(context, reels[page].url, reels[page].title)
                         },
                         onWhatsApp = {
                             if (isSharingToWhatsApp) return@ReelItem
-                            AnalyticsManager.trackEvent("Reels - WhatsApp Tapped", mapOf("reel_id" to reels[page].id))
+                            AnalyticsManager.trackEvent(AnalyticsEvents.REELS_WHATSAPP_TAPPED, mapOf("reel_id" to reels[page].id))
                             isSharingToWhatsApp = true
                             scope.launch {
                                 val success = shareVideoToWhatsApp(
@@ -444,7 +445,7 @@ fun ReelItem(
             modifier = Modifier
                 .fillMaxSize()
                 .smoothClickable {
-                        AnalyticsManager.trackEvent("Reels - Video Tapped", mapOf("action" to (if (isPlaying) "pause" else "play")))
+                        AnalyticsManager.trackEvent(AnalyticsEvents.REELS_VIDEO_TAPPED, mapOf("action" to (if (isPlaying) "pause" else "play")))
                         isPlaying = !isPlaying
                         if (isPlaying) exoPlayer.play() else exoPlayer.pause()
                     }
@@ -518,7 +519,7 @@ fun ReelItem(
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.6f))
                     .smoothClickable {
-                        AnalyticsManager.trackEvent("Reels - Mute Toggled", mapOf("muted" to (!isMuted).toString()))
+                        AnalyticsManager.trackEvent(AnalyticsEvents.REELS_MUTE_TOGGLED, mapOf("muted" to (!isMuted).toString()))
                         isMuted = !isMuted
                         exoPlayer.volume = if (isMuted) 0f else 1f
                     },
