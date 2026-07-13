@@ -1,10 +1,12 @@
 package com.squarenova.emaanwallpapers
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.facebook.FacebookSdk
+import com.facebook.LoggingBehavior
 import com.facebook.appevents.AppEventsLogger
 import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.ktx.analytics
@@ -41,8 +43,38 @@ class App : Application() {
         // Meta / Facebook SDK
         // =========================
 
+        // TEMP META DEBUG — remove after investigation
+        FacebookSdk.setIsDebugEnabled(true)
+        FacebookSdk.addLoggingBehavior(LoggingBehavior.APP_EVENTS)
+        FacebookSdk.addLoggingBehavior(LoggingBehavior.REQUESTS)
+        FacebookSdk.addLoggingBehavior(LoggingBehavior.INCLUDE_RAW_RESPONSES)
+        FacebookSdk.addLoggingBehavior(LoggingBehavior.DEVELOPER_ERRORS)
+        FacebookSdk.addLoggingBehavior(LoggingBehavior.GRAPH_API_DEBUG_INFO)
+        FacebookSdk.addLoggingBehavior(LoggingBehavior.GRAPH_API_DEBUG_WARNING)
+        Log.d(
+            "MetaDebug",
+            "pre-init isInitialized=${FacebookSdk.isInitialized()} " +
+                "isFullyInitialized=${FacebookSdk.isFullyInitialized()}",
+        )
+        // END TEMP META DEBUG
+
         FacebookSdk.fullyInitialize()
+        // TEMP META DEBUG — remove after investigation
+        Log.d(
+            "MetaDebug",
+            "post-fullyInitialize isInitialized=${FacebookSdk.isInitialized()} " +
+                "isFullyInitialized=${FacebookSdk.isFullyInitialized()} " +
+                "applicationId=${FacebookSdk.getApplicationId()} " +
+                "clientTokenSet=${!FacebookSdk.getClientToken().isNullOrBlank()} " +
+                "autoLog=${FacebookSdk.getAutoLogAppEventsEnabled()} " +
+                "advertiserIdCollection=${FacebookSdk.getAdvertiserIDCollectionEnabled()}",
+        )
+        Log.d("MetaDebug", "calling AppEventsLogger.activateApp(Application)")
+        // END TEMP META DEBUG
         AppEventsLogger.activateApp(this)
+        // TEMP META DEBUG — remove after investigation
+        Log.d("MetaDebug", "AppEventsLogger.activateApp(Application) returned")
+        // END TEMP META DEBUG
 
         // =========================
         // Subscription Manager
@@ -67,15 +99,33 @@ class App : Application() {
             this,
             BuildConfig.MIXPANEL_TOKEN
         )
+        // TEMP META DEBUG — remove after investigation
+        Log.d(
+            "MetaDebug",
+            "AnalyticsManager.init done; about to track APP_LAUNCHED / flush via Meta path",
+        )
+        // END TEMP META DEBUG
 
         try {
             AnalyticsManager.trackEvent(AnalyticsEvents.APP_LAUNCHED)
+            // TEMP META DEBUG — remove after investigation
+            Log.d("MetaDebug", "AnalyticsManager.trackEvent(APP_LAUNCHED) returned")
+            // END TEMP META DEBUG
             if (BuildConfig.DEBUG) {
                 AnalyticsManager.track(AnalyticsEvents.META_TEST_EVENT)
+                // TEMP META DEBUG — remove after investigation
+                Log.d("MetaDebug", "AnalyticsManager.track(META_TEST_EVENT) returned")
+                // END TEMP META DEBUG
             }
             AnalyticsManager.flush()
-        } catch (_: Exception) {
+            // TEMP META DEBUG — remove after investigation
+            Log.d("MetaDebug", "AnalyticsManager.flush() returned — watch FacebookSdk APP_EVENTS/REQUESTS logs")
+            // END TEMP META DEBUG
+        } catch (e: Exception) {
             // Analytics must never block or crash app startup.
+            // TEMP META DEBUG — remove after investigation
+            Log.e("MetaDebug", "startup analytics threw", e)
+            // END TEMP META DEBUG
         }
 
         // Flush analytics when app goes background; resume subscription recovery when it returns.
@@ -90,6 +140,9 @@ class App : Application() {
 
                 override fun onStop(owner: LifecycleOwner) {
                     try {
+                        // TEMP META DEBUG — remove after investigation
+                        Log.d("MetaDebug", "ProcessLifecycle onStop → AnalyticsManager.flush()")
+                        // END TEMP META DEBUG
                         AnalyticsManager.flush()
                     } catch (_: Exception) {
                         // Ignore analytics flush failures.
