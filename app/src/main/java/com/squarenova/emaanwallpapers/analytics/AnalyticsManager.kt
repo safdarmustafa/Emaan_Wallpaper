@@ -136,6 +136,41 @@ object AnalyticsManager {
     }
 
     /**
+     * Purchase once per [key] within this process (same dedupe store as [trackOnce]).
+     */
+    fun trackPurchaseOnce(
+        key: String,
+        amount: Double,
+        currency: String,
+        props: Map<String, Any?> = emptyMap(),
+    ) {
+        if (!firedOnceKeys.add(key)) return
+        trackPurchase(
+            amount = amount,
+            currency = currency,
+            props = props,
+        )
+    }
+
+    /**
+     * Meta standard StartTrial once per [key]. Mixpanel no-ops via provider default — existing
+     * [AnalyticsEvents.TRIAL_STARTED] via [trackOnce] is unchanged.
+     */
+    fun trackStartTrialOnce(
+        key: String,
+        props: Map<String, Any?> = emptyMap(),
+    ) {
+        if (!firedOnceKeys.add(key)) return
+        try {
+            providers.forEach {
+                it.startTrial(props = props)
+            }
+        } catch (_: Exception) {
+            // Analytics must never affect app functionality.
+        }
+    }
+
+    /**
      * Identify logged in user
      */
     fun identify(userId: String) {

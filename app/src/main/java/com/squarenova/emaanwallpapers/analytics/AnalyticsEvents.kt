@@ -31,6 +31,9 @@ object AnalyticsEvents {
     const val TRIAL_EXPIRED = "trial_expired"
     const val SUBSCRIPTION_CHARGE_FAILED = "subscription_charge_failed"
 
+    /** Meta standard StartTrial event name (AppEventsConstants.EVENT_NAME_START_TRIAL). */
+    const val START_TRIAL = "StartTrial"
+
     /** Mixpanel equivalent of a standard purchase / revenue event. Meta uses logPurchase(). */
     const val PURCHASE = "Purchase"
 

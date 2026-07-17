@@ -239,10 +239,9 @@ object SubscriptionOrchestrator {
         // Tracks a successful activate-trial anywhere in this flow so we never call it twice.
         // Safe: activate-trial is idempotent server-side; skipping duplicates only removes latency.
         var activateTrialSucceededInFlow = fastPath.activateTrialSucceeded
-        if (activateTrialSucceededInFlow) {
-            emitTrialStartedIfApplicable(subId)
-            emitSubscriptionActivatedIfApplicable(subId)
-        }
+        // Analytics self-gates on EntitlementRepository.lastStatus (trial / active).
+        emitTrialStartedIfApplicable(subId)
+        emitSubscriptionActivatedIfApplicable(subId)
         if (fastPath.hasPremium) {
             succeed(store, subId)
             return
@@ -344,10 +343,9 @@ object SubscriptionOrchestrator {
             if (syncResult.activateTrialSucceeded) {
                 activateTrialSucceededInFlow = true
             }
-            if (activateTrialSucceededInFlow) {
-                emitTrialStartedIfApplicable(subId)
-                emitSubscriptionActivatedIfApplicable(subId)
-            }
+            // Analytics self-gates on lastStatus; once-keys prevent retry duplicates.
+            emitTrialStartedIfApplicable(subId)
+            emitSubscriptionActivatedIfApplicable(subId)
             if (syncResult.hasPremium) {
                 succeed(store, subId)
                 return
@@ -365,6 +363,7 @@ object SubscriptionOrchestrator {
     /**
      * Analytics only: emit trial_started after activate-trial succeeded and entitlement status is
      * trial. [AnalyticsManager.trackOnce] dedupes within this process (confirmation retries/loops).
+     * Also maps the same milestone to Meta standard StartTrial (Mixpanel unchanged for this path).
      */
     private fun emitTrialStartedIfApplicable(subscriptionId: String) {
         val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
@@ -373,11 +372,16 @@ object SubscriptionOrchestrator {
             key = "trial_started:$subscriptionId",
             eventName = AnalyticsEvents.TRIAL_STARTED,
         )
+        AnalyticsManager.trackStartTrialOnce(
+            key = "start_trial:$subscriptionId",
+            props = mapOf("subscription_id" to subscriptionId),
+        )
     }
 
     /**
      * Analytics only: emit subscription_activated after activate-trial succeeded and entitlement
      * status is paid "active" (never trial). trackOnce dedupes within this process.
+     * Also emits Meta Purchase (₹99) once for the first successful subscription charge.
      */
     private fun emitSubscriptionActivatedIfApplicable(subscriptionId: String) {
         val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
@@ -385,6 +389,15 @@ object SubscriptionOrchestrator {
         AnalyticsManager.trackOnce(
             key = "subscription_activated:$subscriptionId",
             eventName = AnalyticsEvents.SUBSCRIPTION_ACTIVATED,
+        )
+        AnalyticsManager.trackPurchaseOnce(
+            key = "purchase:$subscriptionId",
+            amount = SubscriptionPricing.MONTHLY_AMOUNT,
+            currency = SubscriptionPricing.CURRENCY,
+            props = mapOf(
+                "subscription_id" to subscriptionId,
+                "status" to status,
+            ),
         )
     }
 
