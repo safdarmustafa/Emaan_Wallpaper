@@ -115,6 +115,27 @@ object AnalyticsManager {
     }
 
     /**
+     * Standard purchase / revenue event. Future payment code should use this API only.
+     */
+    fun trackPurchase(
+        amount: Double,
+        currency: String,
+        props: Map<String, Any?> = emptyMap(),
+    ) {
+        try {
+            providers.forEach {
+                it.purchase(
+                    amount = amount,
+                    currency = currency,
+                    props = props,
+                )
+            }
+        } catch (_: Exception) {
+            // Analytics must never affect app functionality.
+        }
+    }
+
+    /**
      * Identify logged in user
      */
     fun identify(userId: String) {

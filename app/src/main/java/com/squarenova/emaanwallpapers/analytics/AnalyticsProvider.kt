@@ -12,4 +12,16 @@ interface AnalyticsProvider {
     fun reset()
 
     fun flush()
+
+    /**
+     * Standard purchase / revenue event. Default no-op so providers can opt in without breaking
+     * existing implementations.
+     */
+    fun purchase(
+        amount: Double,
+        currency: String,
+        props: Map<String, Any?> = emptyMap(),
+    ) {
+        // Default no-op
+    }
 }

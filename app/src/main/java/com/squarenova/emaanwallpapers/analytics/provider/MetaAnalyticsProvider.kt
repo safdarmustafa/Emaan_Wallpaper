@@ -4,6 +4,8 @@ import android.content.Context
 import com.facebook.appevents.AppEventsLogger
 import com.squarenova.emaanwallpapers.analytics.AnalyticsProvider
 import android.os.Bundle
+import java.math.BigDecimal
+import java.util.Currency
 
 
 class MetaAnalyticsProvider(
@@ -43,6 +45,36 @@ class MetaAnalyticsProvider(
             event,
             bundle
         )
+    }
+
+    override fun purchase(
+        amount: Double,
+        currency: String,
+        props: Map<String, Any?>,
+    ) {
+        if (amount <= 0.0 || currency.isBlank()) return
+
+        val bundle = Bundle()
+        props.forEach { (key, value) ->
+            when (value) {
+                is String -> bundle.putString(key, value)
+                is Int -> bundle.putInt(key, value)
+                is Double -> bundle.putDouble(key, value)
+                is Float -> bundle.putFloat(key, value)
+                is Boolean -> bundle.putBoolean(key, value)
+                is Long -> bundle.putLong(key, value)
+            }
+        }
+
+        try {
+            logger.logPurchase(
+                BigDecimal.valueOf(amount),
+                Currency.getInstance(currency.trim().uppercase()),
+                bundle,
+            )
+        } catch (_: Exception) {
+            // Invalid currency or SDK failure must not affect app functionality.
+        }
     }
 
     override fun identify(userId: String) {

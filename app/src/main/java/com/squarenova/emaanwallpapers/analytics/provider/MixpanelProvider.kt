@@ -3,6 +3,7 @@ package com.squarenova.emaanwallpapers.analytics.provider
 import android.content.Context
 import com.mixpanel.android.mpmetrics.MixpanelAPI
 import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsProvider
 import org.json.JSONObject
 
@@ -55,6 +56,35 @@ class MixpanelProvider(
         }
 
         mixpanel.track(event, json)
+    }
+
+    override fun purchase(
+        amount: Double,
+        currency: String,
+        props: Map<String, Any?>,
+    ) {
+        if (amount <= 0.0 || currency.isBlank()) return
+
+        val merged = LinkedHashMap<String, Any?>()
+        merged.putAll(globalProperties())
+        merged.put("amount", amount)
+        merged.put("currency", currency.trim().uppercase())
+        merged.putAll(props)
+
+        val json = JSONObject()
+        merged.forEach { (key, value) ->
+            when (value) {
+                null -> Unit
+                is String -> {
+                    if (value.isNotBlank()) {
+                        json.put(key, value)
+                    }
+                }
+                else -> json.put(key, value)
+            }
+        }
+
+        mixpanel.track(AnalyticsEvents.PURCHASE, json)
     }
 
     override fun identify(userId: String) {

@@ -31,6 +31,9 @@ object AnalyticsEvents {
     const val TRIAL_EXPIRED = "trial_expired"
     const val SUBSCRIPTION_CHARGE_FAILED = "subscription_charge_failed"
 
+    /** Mixpanel equivalent of a standard purchase / revenue event. Meta uses logPurchase(). */
+    const val PURCHASE = "Purchase"
+
     const val PROFILE_BACK_TAPPED = "Profile - Back Tapped"
     const val PROFILE_EDIT_PROFILE_TAPPED = "Profile - Edit Profile Tapped"
     const val PROFILE_AVATAR_TAPPED = "Profile - Avatar Tapped"
