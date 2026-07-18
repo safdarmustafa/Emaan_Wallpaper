@@ -356,7 +356,7 @@ fun SubscriptionScreen(navController: NavController) {
             val options = JSONObject().apply {
                 put("subscription_id", subscriptionId)
                 put("name", "Emaan Wallpapers")
-                put("description", "Approve AutoPay ₹99/month")
+                put("description", "Approve AutoPay ₹249/month")
                 put("prefill.contact", phone)
                 put("prefill.email", "user@yourapp.com")
             }
@@ -772,7 +772,7 @@ fun SubscriptionScreen(navController: NavController) {
                 PremiumPricingHighlightCard()
 
                 Text(
-                    text = "Start your 3-day free trial now by approving AutoPay for ₹99/month — you won’t be charged until your trial ends.",
+                    text = "Start your 1-day free trial now by approving AutoPay for ₹249/month — you won’t be charged until your trial ends.",
                     color = PremiumSubscriptionColors.TextSecondary,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
@@ -789,7 +789,7 @@ fun SubscriptionScreen(navController: NavController) {
 
                 Text(
                     text = "Cancel anytime from Profile → Manage Subscription. " +
-                        "Subscription auto-renews at ₹99/month unless cancelled 24h before renewal.",
+                        "Subscription auto-renews at ₹249/month unless cancelled 24h before renewal.",
                     color = PremiumSubscriptionColors.TextSecondary.copy(alpha = 0.85f),
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
@@ -1034,7 +1034,7 @@ private fun MandatePendingOverlay(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = "Your subscription was created, but AutoPay setup wasn’t finished. " +
-                        "Complete it now to activate your 3-day free trial and premium access.",
+                        "Complete it now to activate your 1-day free trial and premium access.",
                     color = PremiumSubscriptionColors.TextSecondary,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,

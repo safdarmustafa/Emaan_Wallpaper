@@ -483,13 +483,13 @@ fun ProfileSubscriptionCard(
                 isActivePremium -> {
                     ProfileSubscriptionDetailRow(
                         label = "Next Renewal",
-                        value = trialEndFormatted ?: "Monthly · ₹99",
+                        value = trialEndFormatted ?: "Monthly · ₹249",
                         icon = Icons.Default.CalendarToday,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ProfileSubscriptionDetailRow(
                         label = "Plan",
-                        value = "₹99 / month",
+                        value = "₹249 / month",
                         icon = Icons.Default.WorkspacePremium,
                     )
                     Spacer(modifier = Modifier.height(10.dp))

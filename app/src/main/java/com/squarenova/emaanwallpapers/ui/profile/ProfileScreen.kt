@@ -334,7 +334,7 @@ fun ProfileScreen(navController: NavController) {
                             )
                             profileMessage = ProfileMessage(
                                 if (isTrialCancel) {
-                                    "Trial cancelled. You will not be charged ₹99"
+                                    "Trial cancelled. You will not be charged ₹249"
                                 } else {
                                     "Cancellation requested"
                                 },
@@ -663,7 +663,7 @@ fun ProfileScreen(navController: NavController) {
                     ),
                     ProfileAccountItem(
                         title = "Subscription Disclosure",
-                        subtitle = "3-day free trial, ₹99/month auto-renewal, refunds",
+                        subtitle = "1-day free trial, ₹249/month auto-renewal, refunds",
                         icon = Icons.Default.WorkspacePremium,
                         opensExternal = true,
                         onClick = {

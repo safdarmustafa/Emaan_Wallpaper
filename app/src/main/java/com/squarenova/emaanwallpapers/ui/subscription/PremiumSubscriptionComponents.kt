@@ -248,7 +248,7 @@ fun SubscriptionSetupFullScreenOverlay(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "This step only confirms AutoPay ₹99/month",
+                        text = "This step only confirms AutoPay ₹249/month",
                         color = PremiumSubscriptionColors.TextSecondary,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
@@ -305,7 +305,7 @@ fun TrialActivatedSuccessOverlay(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = "You have premium access for 3 days",
+                        text = "You have premium access for 1 day",
                         color = PremiumSubscriptionColors.TextSecondary,
                         fontSize = 15.sp,
                         lineHeight = 22.sp,
@@ -353,14 +353,14 @@ fun PremiumPricingHighlightCard(
             ) {
                 Column {
                     Text(
-                        text = "Free for 3 days",
+                        text = "Free for 1 day",
                         color = PremiumSubscriptionColors.TextPrimary,
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "₹99/month after 3 days",
+                        text = "₹249/month after 1 day",
                         color = PremiumSubscriptionColors.TextSecondary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium

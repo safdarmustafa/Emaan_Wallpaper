@@ -381,7 +381,7 @@ object SubscriptionOrchestrator {
     /**
      * Analytics only: emit subscription_activated after activate-trial succeeded and entitlement
      * status is paid "active" (never trial). trackOnce dedupes within this process.
-     * Also emits Meta Purchase (₹99) once for the first successful subscription charge.
+     * Also emits Meta Purchase (₹249) once for the first successful subscription charge.
      */
     private fun emitSubscriptionActivatedIfApplicable(subscriptionId: String) {
         val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
