@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const jsonHeaders = { "Content-Type": "application/json" };
-const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
+const TRIAL_MS = 1 * 24 * 60 * 60 * 1000;
 
 /** Razorpay mandate must be authenticated (or already active) before trial is granted. */
 const ALLOWED_TRIAL_STATUSES = new Set(["authenticated", "active"]);

@@ -222,12 +222,12 @@ serve(async (req) => {
       }
     }
 
-    // start_at anchors the first ₹99 charge to the end of the 3-day free trial. In the new
+    // start_at anchors the first plan charge to the end of the 1-day free trial. In the new
     // onboarding the subscription is created BEFORE any trial exists, so we derive start_at purely
-    // from server time (now + 3 days) instead of the users.trial_end column. This stays backward
-    // compatible with the current app (where trial_end is also now + 3 days). Razorpay expects a
+    // from server time (now + 1 day) instead of the users.trial_end column. This stays backward
+    // compatible with the current app (where trial_end is also now + 1 day). Razorpay expects a
     // future Unix timestamp in seconds; the +60s floor keeps it safely in the future.
-    const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
+    const TRIAL_MS = 1 * 24 * 60 * 60 * 1000;
     const startAtUnix = Math.max(
       Math.floor((Date.now() + TRIAL_MS) / 1000),
       Math.floor(Date.now() / 1000) + 60,
