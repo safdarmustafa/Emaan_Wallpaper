@@ -74,7 +74,7 @@ serve(async (req) => {
         { status: 403, headers: jsonHeaders },
       );
     }
-    if (amount !== 500 || currency !== "INR") {
+    if (amount !== 300 || currency !== "INR") {
       log("verify_failed_amount", { phone, payment_id: paymentId, amount, currency });
       return new Response(JSON.stringify({ error: "Invalid payment amount or currency" }), {
         status: 403,

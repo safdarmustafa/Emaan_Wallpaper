@@ -28,7 +28,7 @@ serve(async (req) => {
     if (!razorpay_payment_id) {
       return new Response(
         JSON.stringify({
-          error: "razorpay_payment_id is required (₹5 payment must complete first)",
+          error: "razorpay_payment_id is required (₹3 payment must complete first)",
         }),
         { status: 400, headers: jsonHeaders },
       );

@@ -26,7 +26,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        amount: 500, // ₹5 — paise
+        amount: 300, // ₹3 — paise
         currency: "INR",
         receipt: `entry_${Date.now()}`,
       }),

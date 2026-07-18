@@ -56,7 +56,7 @@ serve(async (req) => {
     }
     if (!row.trial_paid) {
       return new Response(
-        JSON.stringify({ error: "Eligible user not found (verify ₹5 payment first)" }),
+        JSON.stringify({ error: "Eligible user not found (verify ₹3 payment first)" }),
         { status: 400, headers: jsonHeaders },
       );
     }
