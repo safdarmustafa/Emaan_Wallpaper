@@ -509,10 +509,6 @@ fun SubscriptionScreen(navController: NavController) {
                                 }
                                 pendingSubscriptionId = subId
                                 Log.i("SUBSCRIPTION", "MANDATE success — handing off to durable confirmation")
-                                AnalyticsManager.track(
-                                    AnalyticsEvents.MANDATE_SUCCESS,
-                                    mapOf("subscription_id" to subId)
-                                )
                                 // Hand the whole verify → activate → sync lifecycle to the orchestrator.
                                 // It persists a durable ticket and survives restart/process death; the
                                 // orchestrator state collector below drives the confirming/success/failure UI.
@@ -553,10 +549,6 @@ fun SubscriptionScreen(navController: NavController) {
                 is PaymentResult.Error -> {
                     releaseCheckoutFlight("payment_error")
                     // Mandate is the only checkout in the flow, so every failure is a mandate step.
-                    AnalyticsManager.track(
-                        AnalyticsEvents.MANDATE_FAILED,
-                        mapOf("error_reason" to result.message)
-                    )
                     showTrialSuccessScreen = false
                     currentCheckoutKind = CheckoutKind.NONE
                     mandatePaymentSuccessReceived = false
@@ -598,7 +590,6 @@ fun SubscriptionScreen(navController: NavController) {
                 mandateLaunchHandled = false
                 mandatePaymentSuccessReceived = false
                 pendingSubscriptionId = null
-                AnalyticsManager.track(AnalyticsEvents.SUBSCRIPTION_CONFIRMED)
                 showTrialSuccessScreen = true
                 SubscriptionOrchestrator.reset()
             }
@@ -782,7 +773,10 @@ fun SubscriptionScreen(navController: NavController) {
 
                 PremiumGradientCtaButton(
                     text = if (hasTrialPaid) "Continue AutoPay Setup" else "Start Free Trial",
-                    onClick = { resumeSubscriptionFlow() },
+                    onClick = {
+                        AnalyticsManager.track(AnalyticsEvents.SUBSCRIBE_BUTTON_CLICKED)
+                        resumeSubscriptionFlow()
+                    },
                     enabled = !showTrialSuccessScreen && !showSetupExplanationScreen,
                     loading = isLoading && !showSetupExplanationScreen
                 )
@@ -799,7 +793,6 @@ fun SubscriptionScreen(navController: NavController) {
 
                 TextButton(
                     onClick = {
-                        AnalyticsManager.trackEvent(AnalyticsEvents.SUBSCRIPTION_DISCLOSURE_LINK_TAPPED)
                         LegalUrlOpener.openSubscriptionDisclosure(context)
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -823,12 +816,10 @@ fun SubscriptionScreen(navController: NavController) {
                 mandateLaunchHandled = true
                 isLoading = true
                 if (mandatePaymentSuccessReceived) {
-                    AnalyticsManager.track(AnalyticsEvents.MANDATE_RETRY_CLICKED)
                     mandateLaunchHandled = false
                     launchMandateCheckoutViaBackend(phone.trim())
                     return@SubscriptionSetupFullScreenOverlay
                 }
-                AnalyticsManager.track(AnalyticsEvents.MANDATE_INITIATED)
                 val phoneForApi = phone.trim()
                 if (phoneForApi.isBlank()) {
                     mandateLaunchHandled = false
@@ -918,7 +909,6 @@ fun SubscriptionScreen(navController: NavController) {
                     return@MandatePendingOverlay
                 }
                 showMandatePending = false
-                AnalyticsManager.track(AnalyticsEvents.MANDATE_PENDING_RESUME_CLICKED)
                 // Resumes THIS subscription (create-subscription reuses created/authenticated) and
                 // opens ONLY the mandate checkout — never charges twice.
                 launchMandateCheckoutViaBackend(phoneForApi)

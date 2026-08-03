@@ -26,8 +26,7 @@ interface AnalyticsProvider {
     }
 
     /**
-     * Meta standard StartTrial (and equivalents). Default no-op so Mixpanel keeps receiving only
-     * the existing [AnalyticsEvents.TRIAL_STARTED] via [track] / [trackOnce].
+     * Meta standard StartTrial (and equivalents). Default no-op; Mixpanel overrides to track StartTrial.
      */
     fun startTrial(
         props: Map<String, Any?> = emptyMap(),

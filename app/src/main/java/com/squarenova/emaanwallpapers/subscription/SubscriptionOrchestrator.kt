@@ -1,7 +1,6 @@
 package com.squarenova.emaanwallpapers.subscription
 
 import android.content.Context
-import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
@@ -361,17 +360,12 @@ object SubscriptionOrchestrator {
         if (extended) EXTENDED_INTERVAL_MS else backoff
 
     /**
-     * Analytics only: emit trial_started after activate-trial succeeded and entitlement status is
-     * trial. [AnalyticsManager.trackOnce] dedupes within this process (confirmation retries/loops).
-     * Also maps the same milestone to Meta standard StartTrial (Mixpanel unchanged for this path).
+     * Analytics only: Meta standard StartTrial after entitlement status is trial.
+     * [AnalyticsManager.trackStartTrialOnce] dedupes within this process.
      */
     private fun emitTrialStartedIfApplicable(subscriptionId: String) {
         val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
         if (status != "trial") return
-        AnalyticsManager.trackOnce(
-            key = "trial_started:$subscriptionId",
-            eventName = AnalyticsEvents.TRIAL_STARTED,
-        )
         AnalyticsManager.trackStartTrialOnce(
             key = "start_trial:$subscriptionId",
             props = mapOf("subscription_id" to subscriptionId),
@@ -379,17 +373,12 @@ object SubscriptionOrchestrator {
     }
 
     /**
-     * Analytics only: emit subscription_activated after activate-trial succeeded and entitlement
-     * status is paid "active" (never trial). trackOnce dedupes within this process.
-     * Also emits Meta Purchase (₹249) once for the first successful subscription charge.
+     * Analytics only: Meta standard Purchase (₹249) once for paid status "active" (never trial).
+     * [AnalyticsManager.trackPurchaseOnce] dedupes within this process.
      */
     private fun emitSubscriptionActivatedIfApplicable(subscriptionId: String) {
         val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
         if (status != "active") return
-        AnalyticsManager.trackOnce(
-            key = "subscription_activated:$subscriptionId",
-            eventName = AnalyticsEvents.SUBSCRIPTION_ACTIVATED,
-        )
         AnalyticsManager.trackPurchaseOnce(
             key = "purchase:$subscriptionId",
             amount = SubscriptionPricing.MONTHLY_AMOUNT,

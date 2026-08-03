@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
@@ -174,6 +175,7 @@ fun OtpScreen(
 
                                 dataStoreManager.saveLogin(phone)
                                 AnalyticsManager.identify(phone)
+                                AnalyticsManager.track(AnalyticsEvents.LOGIN_SUCCESS)
 
                                 val subscriptionSyncManager =
                                     UserSubscriptionSyncManager(dataStoreManager)

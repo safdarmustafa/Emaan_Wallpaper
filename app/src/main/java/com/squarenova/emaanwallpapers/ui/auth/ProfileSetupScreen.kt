@@ -139,7 +139,6 @@ fun ProfileSetupScreen(navController: NavController) {
             // ✅ Save Button
             Button(
                 onClick = {
-                    AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_SETUP_SAVE_CONTINUE_TAPPED)
                     // Validate required fields
                     if (firstName.trim().isEmpty()) {
                         errorMessage = "First name is required"
@@ -244,7 +243,6 @@ fun ProfileSetupScreen(navController: NavController) {
 
             // Skip option (optional — remove if you want to force setup)
             TextButton(onClick = {
-                AnalyticsManager.trackEvent(AnalyticsEvents.PROFILE_SETUP_SKIP_TAPPED)
                 scope.launch {
                     val phone = dataStoreManager.phoneNumber.firstOrNull()
                     if (!phone.isNullOrEmpty()) {

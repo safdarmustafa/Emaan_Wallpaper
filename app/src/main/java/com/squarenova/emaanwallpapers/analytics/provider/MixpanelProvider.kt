@@ -87,6 +87,10 @@ class MixpanelProvider(
         mixpanel.track(AnalyticsEvents.PURCHASE, json)
     }
 
+    override fun startTrial(props: Map<String, Any?>) {
+        track(AnalyticsEvents.START_TRIAL, props)
+    }
+
     override fun identify(userId: String) {
 
         if (userId.isBlank()) return

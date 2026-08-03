@@ -192,7 +192,6 @@ fun HomeScreen(navController: NavController) {
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     var redirectedToSubscription by remember { mutableStateOf(false) }
-    var lastTrackedSubscriptionStatus by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(isLoading, user?.subscription_status, user?.trial_end, user?.phone_number) {
         if (isLoading || redirectedToSubscription) return@LaunchedEffect
@@ -261,8 +260,13 @@ fun HomeScreen(navController: NavController) {
                 "expired" -> "expired"
                 else -> "not_subscribed"
             }
-            AnalyticsManager.track(AnalyticsEvents.HOME_ACCESS_BLOCKED, mapOf("reason" to reason))
             AnalyticsManager.track(AnalyticsEvents.PAYWALL_SHOWN, mapOf("reason" to reason))
+            if (reason == "expired") {
+                AnalyticsManager.trackOnce(
+                    key = "trial_expired",
+                    eventName = AnalyticsEvents.TRIAL_EXPIRED,
+                )
+            }
             Log.d(
                 "HOME_ACCESS_GUARD",
                 "Redirecting: status=${user?.subscription_status} trialEnd=${user?.trial_end}"
@@ -317,16 +321,6 @@ fun HomeScreen(navController: NavController) {
             Log.e("HOME_USER_ERROR", e.message ?: "Unknown")
         } finally {
             isLoading = false
-        }
-    }
-
-    LaunchedEffect(user?.subscription_status, user?.current_period_end) {
-        val status = user?.subscription_status?.lowercase() ?: return@LaunchedEffect
-        if (status == lastTrackedSubscriptionStatus) return@LaunchedEffect
-        lastTrackedSubscriptionStatus = status
-        when (status) {
-            "expired" -> AnalyticsManager.track(AnalyticsEvents.TRIAL_EXPIRED)
-            "halted" -> AnalyticsManager.track(AnalyticsEvents.SUBSCRIPTION_CHARGE_FAILED)
         }
     }
 

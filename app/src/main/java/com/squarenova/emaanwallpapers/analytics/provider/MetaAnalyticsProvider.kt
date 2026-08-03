@@ -20,23 +20,9 @@ class MetaAnalyticsProvider(
         event: String,
         props: Map<String, Any?>
     ) {
-        val bundle = Bundle()
-
-        props.forEach { (key, value) ->
-            when (value) {
-                is String -> bundle.putString(key, value)
-                is Int -> bundle.putInt(key, value)
-                is Double -> bundle.putDouble(key, value)
-                is Float -> bundle.putFloat(key, value)
-                is Boolean -> bundle.putBoolean(key, value)
-                is Long -> bundle.putLong(key, value)
-            }
-        }
-
-        logger.logEvent(
-            event,
-            bundle
-        )
+        // Intentionally no-op: Meta receives only Standard Events
+        // (StartTrial via startTrial, Purchase via purchase, plus SDK
+        // Activate/Deactivate App from AppEventsLogger.activateApp).
     }
 
     override fun purchase(

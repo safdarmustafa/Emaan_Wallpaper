@@ -46,50 +46,23 @@ object AnalyticsManager {
             Log.d(
                 TAG,
                 "Analytics providers disabled — Mixpanel token missing/placeholder and/or " +
-                    "Facebook SDK not initialized. track/identify/flush will no-op.",
+                    "Facebook SDK not initialized. track/purchase/startTrial/identify/flush will no-op.",
             )
         }
     }
 
     /**
-     * Track screen views
-     */
-    fun trackScreen(screenName: String) {
-
-        track(
-            eventName = AnalyticsEvents.SCREEN_VIEWED,
-            props = mapOf(
-                "screen_name" to screenName
-            )
-        )
-    }
-
-    /**
-     * Generic event tracking
-     */
-    fun trackEvent(
-        eventName: String,
-        properties: Map<String, Any?> = emptyMap()
-    ) {
-
-        track(
-            eventName = eventName,
-            props = properties
-        )
-    }
-
-    /**
-     * Preferred tracking API
+     * Generic event tracking (Mixpanel). Meta provider no-ops custom names.
      */
     fun track(
         eventName: String,
-        props: Map<String, Any?> = emptyMap()
+        props: Map<String, Any?> = emptyMap(),
     ) {
         try {
             providers.forEach {
                 it.track(
                     event = eventName,
-                    props = props
+                    props = props,
                 )
             }
         } catch (_: Exception) {
@@ -98,19 +71,17 @@ object AnalyticsManager {
     }
 
     /**
-     * Track only once per app process
+     * Track only once per app process (Mixpanel). Meta provider no-ops custom names.
      */
     fun trackOnce(
         key: String,
         eventName: String,
-        props: Map<String, Any?> = emptyMap()
+        props: Map<String, Any?> = emptyMap(),
     ) {
-
         if (!firedOnceKeys.add(key)) return
-
         track(
             eventName = eventName,
-            props = props
+            props = props,
         )
     }
 
@@ -136,7 +107,7 @@ object AnalyticsManager {
     }
 
     /**
-     * Purchase once per [key] within this process (same dedupe store as [trackOnce]).
+     * Purchase once per [key] within this process (same dedupe store as [trackStartTrialOnce]).
      */
     fun trackPurchaseOnce(
         key: String,
@@ -153,8 +124,7 @@ object AnalyticsManager {
     }
 
     /**
-     * Meta standard StartTrial once per [key]. Mixpanel no-ops via provider default — existing
-     * [AnalyticsEvents.TRIAL_STARTED] via [trackOnce] is unchanged.
+     * Meta + Mixpanel StartTrial once per [key].
      */
     fun trackStartTrialOnce(
         key: String,

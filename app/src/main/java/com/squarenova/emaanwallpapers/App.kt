@@ -11,7 +11,6 @@ import com.facebook.appevents.AppEventsLogger
 import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.ktx.Firebase
-import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import com.squarenova.emaanwallpapers.ui.subscription.SubscriptionManager
@@ -99,33 +98,11 @@ class App : Application() {
             this,
             BuildConfig.MIXPANEL_TOKEN
         )
-        // TEMP META DEBUG — remove after investigation
-        Log.d(
-            "MetaDebug",
-            "AnalyticsManager.init done; about to track APP_LAUNCHED / flush via Meta path",
-        )
-        // END TEMP META DEBUG
 
         try {
-            AnalyticsManager.trackEvent(AnalyticsEvents.APP_LAUNCHED)
-            // TEMP META DEBUG — remove after investigation
-            Log.d("MetaDebug", "AnalyticsManager.trackEvent(APP_LAUNCHED) returned")
-            // END TEMP META DEBUG
-            if (BuildConfig.DEBUG) {
-                AnalyticsManager.track(AnalyticsEvents.META_TEST_EVENT)
-                // TEMP META DEBUG — remove after investigation
-                Log.d("MetaDebug", "AnalyticsManager.track(META_TEST_EVENT) returned")
-                // END TEMP META DEBUG
-            }
             AnalyticsManager.flush()
-            // TEMP META DEBUG — remove after investigation
-            Log.d("MetaDebug", "AnalyticsManager.flush() returned — watch FacebookSdk APP_EVENTS/REQUESTS logs")
-            // END TEMP META DEBUG
         } catch (e: Exception) {
             // Analytics must never block or crash app startup.
-            // TEMP META DEBUG — remove after investigation
-            Log.e("MetaDebug", "startup analytics threw", e)
-            // END TEMP META DEBUG
         }
 
         // Flush analytics when app goes background; resume subscription recovery when it returns.
@@ -140,9 +117,6 @@ class App : Application() {
 
                 override fun onStop(owner: LifecycleOwner) {
                     try {
-                        // TEMP META DEBUG — remove after investigation
-                        Log.d("MetaDebug", "ProcessLifecycle onStop → AnalyticsManager.flush()")
-                        // END TEMP META DEBUG
                         AnalyticsManager.flush()
                     } catch (_: Exception) {
                         // Ignore analytics flush failures.
