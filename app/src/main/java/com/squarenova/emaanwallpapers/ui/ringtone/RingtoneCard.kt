@@ -1,24 +1,13 @@
 package com.squarenova.emaanwallpapers.ui.ringtone
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,25 +20,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.AccessTime
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,20 +38,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.squarenova.emaanwallpapers.data.model.Ringtone
 import com.squarenova.emaanwallpapers.theme.BrandGreen
-import com.squarenova.emaanwallpapers.ui.ringtone.components.AudioEqualizer
 import com.squarenova.emaanwallpapers.ui.ringtone.components.PlayerSlider
 
-private val CardSurface = Color(0xFF161616)
-private val CardBorder = Color(0xFF262626)
+private val RowSurface = Color(0xFF141414)
+private val RowSurfaceActive = Color(0xFF182018)
+private val RowBorder = Color(0xFF262626)
+private val RowBorderActive = BrandGreen.copy(alpha = 0.55f)
 private val TextPrimaryDark = Color(0xFFF2F3F2)
 private val TextSecondaryDark = Color(0xFF9AA39C)
-
-private val artworkGradients = listOf(
-    listOf(Color(0xFF34C759), Color(0xFF128C3E)),
-    listOf(Color(0xFF3B82F6), Color(0xFF7C3AED)),
-    listOf(Color(0xFF9333EA), Color(0xFF6D28D9)),
-    listOf(Color(0xFFF59E0B), Color(0xFF92610A))
-)
+private val SetButtonFill = Color(0xFF1A1A1A)
 
 @Composable
 fun RingtoneCard(
@@ -78,174 +54,96 @@ fun RingtoneCard(
     isPlaying: Boolean,
     currentPosition: Long,
     duration: Long,
-    gradientIndex: Int = 0,
+    isSelected: Boolean = false,
+    @Suppress("UNUSED_PARAMETER") gradientIndex: Int = 0,
     isDownloaded: Boolean = false,
     onSeek: (Long) -> Unit,
     onPlayClick: () -> Unit,
     onDownloadClick: () -> Unit = {},
-    onSetRingtoneClick: () -> Unit = {}
+    onSetRingtoneClick: () -> Unit = {},
 ) {
-
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        border = BorderStroke(1.dp, CardBorder),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isPlaying) 10.dp else 2.dp
-        )
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = if (isSelected) RowSurfaceActive else RowSurface,
+        border = BorderStroke(1.dp, if (isSelected) RowBorderActive else RowBorder),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
-
-        Column(modifier = Modifier.padding(16.dp)) {
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-
-                RingtoneArtwork(
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CompactPlayButton(
                     isPlaying = isPlaying,
-                    gradient = artworkGradients[gradientIndex % artworkGradients.size]
+                    onClick = onPlayClick,
                 )
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = ringtone.title,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimaryDark,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (isPlaying) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            AudioEqualizer(maxBarHeight = 14)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = ringtone.category,
-                        fontSize = 13.sp,
-                        color = TextSecondaryDark
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.AccessTime,
-                            contentDescription = null,
-                            tint = TextSecondaryDark,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = formatDuration((duration / 1000).toInt()),
-                            fontSize = 12.sp,
-                            color = TextSecondaryDark
-                        )
-                    }
-                }
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                MorphingPlayButton(
-                    isPlaying = isPlaying,
-                    onClick = onPlayClick
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            PlayerSlider(
-                currentPosition = currentPosition,
-                duration = duration,
-                onSeek = onSeek
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = formatDuration((currentPosition / 1000).toInt()),
-                    fontSize = 12.sp,
-                    color = TextSecondaryDark
-                )
-                Text(
-                    text = formatDuration((duration / 1000).toInt()),
-                    fontSize = 12.sp,
-                    color = TextSecondaryDark
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-
-                OutlinedButton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    onClick = onDownloadClick,
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.5.dp, BrandGreen.copy(alpha = 0.55f)),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandGreen)
-                ) {
-                    Icon(
-                        imageVector = if (isDownloaded) Icons.Default.Check else Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(17.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (isDownloaded) "Saved" else "Download",
+                        text = ringtone.title,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
+                        color = TextPrimaryDark,
                         maxLines = 1,
-                        softWrap = false
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "${ringtone.category} • ${formatDuration((duration / 1000).toInt())}",
+                        fontSize = 12.sp,
+                        color = TextSecondaryDark,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
-                Button(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    onClick = onSetRingtoneClick,
-                    shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BrandGreen,
-                        contentColor = Color.White
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 0.dp,
-                        pressedElevation = 0.dp
-                    )
+                Spacer(modifier = Modifier.width(8.dp))
+
+                IconButton(
+                    onClick = onDownloadClick,
+                    modifier = Modifier.size(42.dp),
                 ) {
                     Icon(
-                        Icons.Default.PhoneAndroid,
-                        contentDescription = null,
-                        modifier = Modifier.size(17.dp)
+                        imageVector = if (isDownloaded) Icons.Default.Check else Icons.Default.Download,
+                        contentDescription = if (isDownloaded) "Saved" else "Download",
+                        tint = BrandGreen,
+                        modifier = Modifier.size(20.dp),
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                }
+
+                CompactSetButton(onClick = onSetRingtoneClick)
+            }
+
+            if (isSelected) {
+                Spacer(modifier = Modifier.height(8.dp))
+                PlayerSlider(
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    onSeek = onSeek,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
                     Text(
-                        text = "Set Ringtone",
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        softWrap = false
+                        text = formatDuration((currentPosition / 1000).toInt()),
+                        fontSize = 11.sp,
+                        color = TextSecondaryDark,
+                    )
+                    Text(
+                        text = formatDuration((duration / 1000).toInt()),
+                        fontSize = 11.sp,
+                        color = TextSecondaryDark,
                     )
                 }
             }
@@ -254,85 +152,61 @@ fun RingtoneCard(
 }
 
 @Composable
-private fun RingtoneArtwork(
+private fun CompactPlayButton(
     isPlaying: Boolean,
-    gradient: List<Color>
-) {
-    val scale by animateFloatAsState(
-        targetValue = if (isPlaying) 1.05f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "artScale"
-    )
-    Box(
-        modifier = Modifier
-            .size(62.dp)
-            .scale(scale)
-            .background(
-                brush = Brush.linearGradient(gradient),
-                shape = RoundedCornerShape(16.dp)
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.MusicNote,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(28.dp)
-        )
-    }
-}
-
-@Composable
-private fun MorphingPlayButton(
-    isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
-        label = "playScale"
-    )
-
     Box(
         modifier = Modifier
-            .size(50.dp)
-            .scale(scale)
+            .size(44.dp)
+            .clip(CircleShape)
             .then(
                 if (isPlaying) {
-                    Modifier.background(BrandGreen, CircleShape)
+                    Modifier.background(BrandGreen)
                 } else {
-                    Modifier.border(2.dp, BrandGreen, CircleShape)
-                }
+                    Modifier
+                        .border(1.5.dp, BrandGreen.copy(alpha = 0.75f), CircleShape)
+                        .background(Color.Transparent)
+                },
             )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick
+                onClick = onClick,
             ),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
-        AnimatedContent(
-            targetState = isPlaying,
-            transitionSpec = {
-                (scaleIn(initialScale = 0.6f) + fadeIn()) togetherWith
-                    (scaleOut(targetScale = 0.6f) + fadeOut())
-            },
-            label = "playPauseMorph"
-        ) { playing ->
-            Icon(
-                imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (playing) "Pause" else "Play",
-                tint = if (playing) Color.White else BrandGreen,
-                modifier = Modifier.size(24.dp)
-            )
-        }
+        Icon(
+            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+            contentDescription = if (isPlaying) "Pause" else "Play",
+            tint = if (isPlaying) Color.White else BrandGreen,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+@Composable
+private fun CompactSetButton(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = SetButtonFill,
+        border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.65f)),
+    ) {
+        Text(
+            text = "Set",
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            color = TextPrimaryDark,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
 private fun formatDuration(totalSeconds: Int): String {
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
+    val safe = totalSeconds.coerceAtLeast(0)
+    val minutes = safe / 60
+    val seconds = safe % 60
     return "%02d:%02d".format(minutes, seconds)
 }
