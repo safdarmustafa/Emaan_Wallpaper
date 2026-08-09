@@ -650,8 +650,9 @@ fun SubscriptionScreen(navController: NavController) {
     val goldBrush = remember {
         Brush.horizontalGradient(
             listOf(
-                PremiumSubscriptionColors.Gold.copy(alpha = 0.9f),
-                PremiumSubscriptionColors.GoldLight
+                PremiumSubscriptionColors.Forest.copy(alpha = 0.35f),
+                PremiumSubscriptionColors.Sage.copy(alpha = 0.55f),
+                PremiumSubscriptionColors.Forest.copy(alpha = 0.35f),
             )
         )
     }
@@ -665,13 +666,12 @@ fun SubscriptionScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
         ) {
-            // Compact premium header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(PremiumSubscriptionColors.Surface.copy(alpha = 0.92f))
+                    .background(PremiumSubscriptionColors.Surface.copy(alpha = 0.96f))
                     .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
@@ -692,21 +692,19 @@ fun SubscriptionScreen(navController: NavController) {
                         .padding(end = 40.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        Text(text = "👑", fontSize = 18.sp)
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            text = "Go Premium",
-                            color = PremiumSubscriptionColors.TextPrimary,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "Unlock unlimited wallpapers",
+                        text = "Premium का पूरा अनुभव",
+                        color = PremiumSubscriptionColors.TextPrimary,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 26.sp,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "शांत, सुंदर Islamic wallpapers",
                         color = PremiumSubscriptionColors.TextSecondary,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -723,14 +721,23 @@ fun SubscriptionScreen(navController: NavController) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
-                    .padding(top = 20.dp, bottom = 32.dp),
+                    .padding(top = 22.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
+                Text(
+                    text = "हर दिन खूबसूरत Islamic wallpapers, रिंगटोन और reels का आनंद लें।",
+                    color = PremiumSubscriptionColors.TextSecondary,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = PremiumSubscriptionColors.SurfaceElevated,
+                    color = PremiumSubscriptionColors.Surface,
                     tonalElevation = 0.dp,
-                    shadowElevation = 8.dp,
+                    shadowElevation = 0.dp,
                     border = BorderStroke(1.dp, PremiumSubscriptionColors.BorderSubtle)
                 ) {
                     Column(
@@ -740,22 +747,22 @@ fun SubscriptionScreen(navController: NavController) {
                         PremiumFeatureRow(
                             icon = Icons.Filled.Star,
                             title = "Unlimited access",
-                            subtitle = "Browse every premium wallpaper"
+                            subtitle = "सभी premium wallpapers खोलें"
                         )
                         PremiumFeatureRow(
                             icon = Icons.Filled.Favorite,
-                            title = "No ads",
-                            subtitle = "Distraction-free experience"
+                            title = "बिना ads",
+                            subtitle = "बिना रुकावट का अनुभव"
                         )
                         PremiumFeatureRow(
                             icon = Icons.AutoMirrored.Filled.List,
                             title = "HD downloads",
-                            subtitle = "Crisp visuals for your screen"
+                            subtitle = "साफ़ और sharp visuals"
                         )
                         PremiumFeatureRow(
                             icon = Icons.Filled.Check,
-                            title = "New wallpapers daily",
-                            subtitle = "Fresh designs on the regular"
+                            title = "रोज़ नए wallpapers",
+                            subtitle = "नए designs, रोज़ाना"
                         )
                     }
                 }
@@ -763,16 +770,17 @@ fun SubscriptionScreen(navController: NavController) {
                 PremiumPricingHighlightCard()
 
                 Text(
-                    text = "Start your 1-day free trial now by approving AutoPay for ₹249/month — you won’t be charged until your trial ends.",
+                    text = "Trial और AutoPay सेटअप के लिए अभी सिर्फ ₹5 लगेगा — यह राशि वापस (refundable) है। " +
+                        "Trial के बाद ₹249/माह AutoPay चालू रहेगा।",
                     color = PremiumSubscriptionColors.TextSecondary,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 PremiumGradientCtaButton(
-                    text = if (hasTrialPaid) "Continue AutoPay Setup" else "Start Free Trial",
+                    text = "Free Trial शुरू करें",
                     onClick = {
                         AnalyticsManager.track(AnalyticsEvents.SUBSCRIBE_BUTTON_CLICKED)
                         resumeSubscriptionFlow()
@@ -782,11 +790,12 @@ fun SubscriptionScreen(navController: NavController) {
                 )
 
                 Text(
-                    text = "Cancel anytime from Profile → Manage Subscription. " +
-                        "Subscription auto-renews at ₹249/month unless cancelled 24h before renewal.",
-                    color = PremiumSubscriptionColors.TextSecondary.copy(alpha = 0.85f),
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
+                    text = "₹5 सिर्फ trial और mandate verify करने के लिए है, और refundable है। " +
+                        "इसके अलावा आपकी अनुमति के बिना कोई अतिरिक्त charge नहीं। " +
+                        "Subscription हर महीने ₹249 पर अपने आप renew होता है।",
+                    color = PremiumSubscriptionColors.TextMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -798,9 +807,10 @@ fun SubscriptionScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = "View subscription terms & auto-renewal disclosure",
-                        color = PremiumSubscriptionColors.TextSecondary,
-                        fontSize = 11.sp,
+                        text = "Subscription शर्तें और auto-renewal details देखें",
+                        color = PremiumSubscriptionColors.Forest,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -809,7 +819,7 @@ fun SubscriptionScreen(navController: NavController) {
 
         SubscriptionSetupFullScreenOverlay(
             visible = showSetupExplanationScreen,
-            ctaText = if (mandatePaymentSuccessReceived) "Retry AutoPay Approval" else "Continue",
+            ctaText = if (mandatePaymentSuccessReceived) "AutoPay फिर से approve करें" else "आगे बढ़ें",
             ctaEnabled = !mandatePaymentSuccessReceived || retryNowMs >= mandateRetryCooldownUntilMs,
             onContinue = {
                 if (mandateLaunchHandled) return@SubscriptionSetupFullScreenOverlay
@@ -936,40 +946,46 @@ private fun SubscriptionConfirmingOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xE60A0A0B)),
+            .background(Color(0xE6F7F5F0)),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 40.dp),
         ) {
-            CircularProgressIndicator(color = PremiumSubscriptionColors.Gold)
-            Spacer(Modifier.height(20.dp))
+            CircularProgressIndicator(color = PremiumSubscriptionColors.Forest)
+            Spacer(modifier = Modifier.height(20.dp))
             Text(
-                text = if (soft) "Still confirming your subscription…" else "Confirming your subscription…",
-                color = Color.White,
+                text = if (soft) {
+                    "Subscription अभी confirm हो रहा है…"
+                } else {
+                    "आपका subscription confirm हो रहा है…"
+                },
+                color = PremiumSubscriptionColors.TextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
+                lineHeight = 24.sp,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = if (soft) {
-                    "This is taking a little longer than usual. We’ll finish automatically in the " +
-                        "background — you won’t be charged twice and you won’t lose premium."
+                    "थोड़ा समय लग रहा है। हम background में automatically पूरा कर देंगे — " +
+                        "दोबारा charge नहीं होगा और आपका premium नहीं जाएगा।"
                 } else {
-                    "Please keep the app open. This can take a few moments — you won’t be charged twice."
+                    "कृपया app खुला रखें। इसमें कुछ क्षण लग सकते हैं — दोबारा charge नहीं होगा।"
                 },
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 12.sp,
+                color = PremiumSubscriptionColors.TextSecondary,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
                 textAlign = TextAlign.Center,
             )
             if (soft) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 TextButton(onClick = onContinueInBackground) {
                     Text(
-                        text = "Continue browsing",
-                        color = PremiumSubscriptionColors.Gold,
+                        text = "Browse करते रहें",
+                        color = PremiumSubscriptionColors.Forest,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -995,7 +1011,7 @@ private fun MandatePendingOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xF2000000)),
+            .background(Color(0xCC0D5C4B)),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
@@ -1003,44 +1019,43 @@ private fun MandatePendingOverlay(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp),
             shape = RoundedCornerShape(24.dp),
-            color = PremiumSubscriptionColors.SurfaceElevated,
+            color = PremiumSubscriptionColors.Surface,
             tonalElevation = 0.dp,
-            shadowElevation = 16.dp,
-            border = BorderStroke(1.dp, PremiumSubscriptionColors.Gold.copy(alpha = 0.3f)),
+            shadowElevation = 0.dp,
+            border = BorderStroke(1.dp, PremiumSubscriptionColors.BorderSubtle),
         ) {
             Column(
                 modifier = Modifier.padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(text = "✅", fontSize = 34.sp)
-                Spacer(Modifier.height(14.dp))
                 Text(
-                    text = "Finish AutoPay setup",
+                    text = "AutoPay setup पूरा करें",
                     color = PremiumSubscriptionColors.TextPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
+                    lineHeight = 28.sp,
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Your subscription was created, but AutoPay setup wasn’t finished. " +
-                        "Complete it now to activate your 1-day free trial and premium access.",
+                    text = "आपका subscription बन चुका है, लेकिन AutoPay setup अधूरा है। " +
+                        "इसे अभी पूरा करें ताकि 1 दिन का Free Trial और Premium access शुरू हो सके।",
                     color = PremiumSubscriptionColors.TextSecondary,
                     fontSize = 14.sp,
-                    lineHeight = 20.sp,
+                    lineHeight = 22.sp,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "You won’t be charged today.",
-                    color = PremiumSubscriptionColors.Gold.copy(alpha = 0.95f),
+                    text = "इस step पर सिर्फ ₹5 लगेगा — यह refundable है",
+                    color = PremiumSubscriptionColors.Forest,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(24.dp))
                 PremiumGradientCtaButton(
-                    text = "Complete AutoPay Setup",
+                    text = "AutoPay सेट करें",
                     onClick = onCompleteSetup,
                     enabled = !loading,
                     loading = loading,

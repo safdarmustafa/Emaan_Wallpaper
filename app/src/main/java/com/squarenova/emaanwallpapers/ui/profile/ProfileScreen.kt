@@ -572,24 +572,6 @@ fun ProfileScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(ProfileSectionSpacing))
 
-            ProfileSubscriptionCard(
-                subscriptionStatus = subscriptionStatus,
-                trialEndIso = trialEnd,
-                onManageSubscription = {
-                    when {
-                        statusLower == "cancel_requested" -> profileMessage = ProfileMessage(
-                            "Cancellation already recorded",
-                            isSuccess = true,
-                        )
-                        canCancelSubscription -> showCancelDialog = true
-                        else -> navController.navigate("subscription") { launchSingleTop = true }
-                    }
-                },
-                modifier = Modifier.padding(horizontal = ProfileHorizontalPadding),
-            )
-
-            Spacer(modifier = Modifier.height(ProfileSectionSpacing))
-
             ProfileAccountSection(
                 items = listOf(
                     ProfileAccountItem(

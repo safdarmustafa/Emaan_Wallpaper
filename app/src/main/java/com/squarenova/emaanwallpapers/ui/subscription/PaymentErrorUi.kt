@@ -77,24 +77,24 @@ object PaymentErrors {
     }
 
     fun title(type: PaymentErrorType): String = when (type) {
-        PaymentErrorType.PAYMENT_CANCELLED -> "Payment cancelled"
-        PaymentErrorType.MANDATE_NOT_APPROVED -> "AutoPay not approved"
-        PaymentErrorType.PAYMENT_FAILED -> "Payment failed"
-        PaymentErrorType.NETWORK_ERROR -> "Connection problem"
-        PaymentErrorType.UNKNOWN_ERROR -> "Something went wrong"
+        PaymentErrorType.PAYMENT_CANCELLED -> "Payment रद्द हो गया"
+        PaymentErrorType.MANDATE_NOT_APPROVED -> "AutoPay approve नहीं हुआ"
+        PaymentErrorType.PAYMENT_FAILED -> "Payment पूरा नहीं हुआ"
+        PaymentErrorType.NETWORK_ERROR -> "Internet की समस्या"
+        PaymentErrorType.UNKNOWN_ERROR -> "कुछ गलत हो गया"
     }
 
     fun message(type: PaymentErrorType): String = when (type) {
         PaymentErrorType.PAYMENT_CANCELLED ->
-            "You closed the payment screen. No money was charged. Tap Retry when you're ready to continue."
+            "आपने payment screen बंद कर दी। कोई पैसा नहीं कटा। तैयार होने पर Retry दबाएँ।"
         PaymentErrorType.MANDATE_NOT_APPROVED ->
-            "AutoPay was not approved in your UPI app. Approve the mandate to finish setting up your subscription."
+            "आपकी UPI app में AutoPay approve नहीं हुआ। Subscription पूरा करने के लिए mandate approve करें।"
         PaymentErrorType.PAYMENT_FAILED ->
-            "We couldn't complete your payment. Check your UPI app or try another payment method."
+            "Payment पूरा नहीं हो सका। अपनी UPI app चेक करें या दूसरा तरीका आज़माएँ।"
         PaymentErrorType.NETWORK_ERROR ->
-            "Please check your internet connection and try again."
+            "कृपया अपना internet connection चेक करके दोबारा कोशिश करें।"
         PaymentErrorType.UNKNOWN_ERROR ->
-            "We ran into an unexpected issue. Please try again in a moment."
+            "कुछ अप्रत्याशित समस्या आई। कृपया थोड़ी देर बाद दोबारा कोशिश करें।"
     }
 
     fun logFailure(
@@ -175,7 +175,7 @@ fun PaymentErrorAlertDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("रद्द करें")
             }
         },
     )
