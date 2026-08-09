@@ -49,6 +49,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -85,6 +87,8 @@ fun LoginScreen(navController: NavController) {
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val scrollState = rememberScrollState()
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -156,6 +160,10 @@ fun LoginScreen(navController: NavController) {
                             val digitsOnly = input.filter { it.isDigit() }.take(10)
                             phoneNumber = digitsOnly
                             if (errorMessage.isNotEmpty()) errorMessage = ""
+                            if (digitsOnly.length == 10) {
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                            }
                         },
                         label = {
                             Text(
