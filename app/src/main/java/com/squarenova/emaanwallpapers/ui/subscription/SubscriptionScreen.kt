@@ -54,7 +54,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.razorpay.Checkout
-import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
@@ -782,7 +781,6 @@ fun SubscriptionScreen(navController: NavController) {
                 PremiumGradientCtaButton(
                     text = "Free Trial शुरू करें",
                     onClick = {
-                        AnalyticsManager.track(AnalyticsEvents.SUBSCRIBE_BUTTON_CLICKED)
                         resumeSubscriptionFlow()
                     },
                     enabled = !showTrialSuccessScreen && !showSetupExplanationScreen,

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { trackMixpanelPurchase } from "../_shared/mixpanel.ts";
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
@@ -42,6 +43,90 @@ function extractSubscriptionEntity(event: Record<string, unknown>): {
   }
 
   return { id: null, current_end: null };
+}
+
+/** Payment fields from subscription.charged (analytics only; does not affect DB writes). */
+function extractPaymentCharge(event: Record<string, unknown>): {
+  paymentId: string | null;
+  amountMinor: number | null;
+  currency: string | null;
+} {
+  const payload = event.payload as Record<string, unknown> | undefined;
+  const payWrap = payload?.payment as { entity?: Record<string, unknown> } | undefined;
+  const payEnt = payWrap?.entity;
+  if (!payEnt || typeof payEnt !== "object") {
+    return { paymentId: null, amountMinor: null, currency: null };
+  }
+  const paymentId = typeof payEnt.id === "string" ? payEnt.id : null;
+  const amountMinor = typeof payEnt.amount === "number" ? payEnt.amount : null;
+  const currency = typeof payEnt.currency === "string" ? payEnt.currency : null;
+  return { paymentId, amountMinor, currency };
+}
+
+/**
+ * Analytics-only helper. Never throws to the webhook caller.
+ * Identity matches Android Mixpanel identify(phone).
+ */
+async function emitMixpanelSubscriptionCharge(args: {
+  // Keep loose typing — Edge Function client is untyped against the users schema.
+  // deno-lint-ignore no-explicit-any
+  supabase: any;
+  event: Record<string, unknown>;
+  subscriptionId: string;
+  periodEndIso: string | null;
+  razorpayEventId: string;
+}): Promise<void> {
+  try {
+    const { paymentId, amountMinor, currency } = extractPaymentCharge(args.event);
+    const insertId = (paymentId ?? args.razorpayEventId).trim();
+    if (!insertId) {
+      console.warn(
+        "mixpanel: no payment_id or razorpay_event_id — skipping Purchase",
+      );
+      return;
+    }
+    if (amountMinor == null || amountMinor <= 0 || !currency?.trim()) {
+      console.warn(
+        "mixpanel: amount/currency missing on subscription.charged — skipping Purchase",
+      );
+      return;
+    }
+    // Razorpay amounts are in the smallest currency unit (e.g. paise for INR).
+    const amountMajor = amountMinor / 100;
+
+    const { data: userRows, error: userErr } = await args.supabase
+      .from("users")
+      .select("phone_number")
+      .eq("razorpay_subscription_id", args.subscriptionId)
+      .limit(1);
+    if (userErr) {
+      console.error("mixpanel: user lookup failed", userErr);
+      return;
+    }
+    const row = userRows?.[0] as { phone_number?: unknown } | undefined;
+    const phone =
+      typeof row?.phone_number === "string" ? row.phone_number.trim() : "";
+    if (!phone) {
+      console.warn(
+        "mixpanel: no phone_number for subscription — skipping Purchase",
+      );
+      return;
+    }
+
+    await trackMixpanelPurchase({
+      distinctId: phone,
+      insertId,
+      subscriptionId: args.subscriptionId,
+      paymentId,
+      amount: amountMajor,
+      currency: currency.trim().toUpperCase(),
+      billingType: "subscription_charge",
+      razorpayEventId: args.razorpayEventId || null,
+      currentPeriodEnd: args.periodEndIso,
+    });
+  } catch (e) {
+    console.error("mixpanel: unexpected error (ignored)", e);
+  }
 }
 
 serve(async (req) => {
@@ -234,6 +319,15 @@ serve(async (req) => {
       if (periodEnd) row.current_period_end = periodEnd;
 
       await supabase.from("users").update(row).eq("razorpay_subscription_id", subId);
+
+      // Analytics only — must never affect subscription processing or webhook status.
+      await emitMixpanelSubscriptionCharge({
+        supabase,
+        event,
+        subscriptionId: subId,
+        periodEndIso: periodEnd,
+        razorpayEventId: eventId,
+      });
     } else if (eventName === "subscription.cancelled") {
       // Phase 2B: make webhook-initiated cancellation write the same metadata as the
       // cancel-subscription Edge Function. Preserve an existing cancelled_at (e.g. set when the
@@ -281,7 +375,8 @@ serve(async (req) => {
     return new Response("OK", { status: 200 });
   } catch (e) {
     console.error("razorpay-webhook", e);
-    return new Response(JSON.stringify({ error: String(e?.message ?? e) }), {
+    const message = e instanceof Error ? e.message : String(e);
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
     });
   }

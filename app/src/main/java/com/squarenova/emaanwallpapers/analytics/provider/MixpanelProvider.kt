@@ -65,6 +65,11 @@ class MixpanelProvider(
     ) {
         if (amount <= 0.0 || currency.isBlank()) return
 
+        // Server webhook is authoritative for Mixpanel subscription revenue
+        // (subscription.charged). Skip client activation here to avoid double-counting;
+        // MetaAnalyticsProvider still records Purchase from the same Android call.
+        if (props["billing_type"] == "client_activation") return
+
         val merged = LinkedHashMap<String, Any?>()
         merged.putAll(globalProperties())
         merged.put("amount", amount)

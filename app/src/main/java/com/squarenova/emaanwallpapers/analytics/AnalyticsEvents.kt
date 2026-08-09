@@ -9,8 +9,6 @@ object AnalyticsEvents {
 
     const val SIGN_UP = "sign_up"
     const val LOGIN_SUCCESS = "login_success"
-    const val PAYWALL_SHOWN = "paywall_shown"
-    const val SUBSCRIBE_BUTTON_CLICKED = "subscribe_button_clicked"
     const val SUBSCRIPTION_CANCELLED = "subscription_cancelled"
     const val TRIAL_EXPIRED = "trial_expired"
 

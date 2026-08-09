@@ -272,7 +272,6 @@ fun HomeScreen(navController: NavController) {
                 "expired" -> "expired"
                 else -> "not_subscribed"
             }
-            AnalyticsManager.track(AnalyticsEvents.PAYWALL_SHOWN, mapOf("reason" to reason))
             if (reason == "expired") {
                 AnalyticsManager.trackOnce(
                     key = "trial_expired",

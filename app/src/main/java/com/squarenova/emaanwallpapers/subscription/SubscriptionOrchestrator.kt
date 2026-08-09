@@ -375,6 +375,8 @@ object SubscriptionOrchestrator {
     /**
      * Analytics only: Meta standard Purchase (₹249) once for paid status "active" (never trial).
      * [AnalyticsManager.trackPurchaseOnce] dedupes within this process.
+     * Mixpanel skips [billing_type]=client_activation (webhook owns Mixpanel revenue);
+     * Meta still receives this Purchase via MetaAnalyticsProvider.
      */
     private fun emitSubscriptionActivatedIfApplicable(subscriptionId: String) {
         val status = EntitlementRepository.lastStatus?.trim()?.lowercase()
@@ -386,6 +388,8 @@ object SubscriptionOrchestrator {
             props = mapOf(
                 "subscription_id" to subscriptionId,
                 "status" to status,
+                "billing_type" to "client_activation",
+                "source" to "android_orchestrator",
             ),
         )
     }

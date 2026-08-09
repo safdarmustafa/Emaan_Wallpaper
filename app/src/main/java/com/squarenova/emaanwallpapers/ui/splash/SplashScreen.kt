@@ -201,10 +201,6 @@ fun SplashScreen(navController: NavController) {
                                     "expired" -> "expired"
                                     else -> "not_subscribed"
                                 }
-                                AnalyticsManager.track(
-                                    AnalyticsEvents.PAYWALL_SHOWN,
-                                    mapOf("reason" to reason),
-                                )
                                 if (reason == "expired") {
                                     AnalyticsManager.trackOnce(
                                         key = "trial_expired",
@@ -236,10 +232,6 @@ fun SplashScreen(navController: NavController) {
                                     popUpTo("splash") { inclusive = true }
                                 }
                             } else {
-                                AnalyticsManager.track(
-                                    AnalyticsEvents.PAYWALL_SHOWN,
-                                    mapOf("reason" to "not_subscribed"),
-                                )
                                 EntitlementDebugLog.navigation(
                                     source = "SplashScreen:default",
                                     destination = "subscription",
