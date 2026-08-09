@@ -33,8 +33,6 @@ import coil.request.ImageRequest
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
 import com.squarenova.emaanwallpapers.theme.AppTextSecondary
 import com.squarenova.emaanwallpapers.theme.HomeTopBarSurface
-import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
-import com.squarenova.emaanwallpapers.ui.subscription.PremiumBadge
 
 @Composable
 fun CompactTopBar(
@@ -43,18 +41,13 @@ fun CompactTopBar(
     isLoadingTitle: Boolean,
     avatarUrl: String?,
     avatarInitial: String,
-    isSubscribed: Boolean,
-    subscriptionStatus: String?,
-    trialEndIso: String? = null,
+    @Suppress("UNUSED_PARAMETER") isSubscribed: Boolean,
+    @Suppress("UNUSED_PARAMETER") subscriptionStatus: String?,
+    @Suppress("UNUSED_PARAMETER") trialEndIso: String? = null,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val showBadge = SubscriptionEntitlement.hasPremiumAccess(
-        subscriptionStatus = subscriptionStatus,
-        trialEndIso = trialEndIso,
-        isSubscribedLegacy = isSubscribed,
-    )
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -102,14 +95,8 @@ fun CompactTopBar(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        if (!isLoadingTitle && showBadge) {
-                            Spacer(modifier = Modifier.padding(start = 8.dp))
-                            PremiumBadge(
-                                isSubscribed = isSubscribed,
-                                subscriptionStatus = subscriptionStatus,
-                                compact = true
-                            )
-                        }
+                        // PremiumBadge intentionally hidden (UI-only). Entitlement /
+                        // paywall logic on HomeScreen is unchanged.
                     }
                 }
                 IconButton(

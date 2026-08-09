@@ -14,9 +14,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -46,10 +48,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
-import coil.ImageLoader
+import coil.Coil
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.size.Size
 import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
@@ -110,6 +113,19 @@ enum class WallpaperFilter(val label: String, val emoji: String, val description
     LIVE("Live", "🌀", "Show live videos only")
 }
 
+/** Unified Home feed item for VerticalPager (preserves All = live-then-static order). */
+private sealed class HomeFeedItem {
+    abstract val id: String
+
+    data class Live(val wallpaper: WallpaperRow) : HomeFeedItem() {
+        override val id: String get() = "live_${wallpaper.id}"
+    }
+
+    data class Static(val wallpaper: WallpaperRow) : HomeFeedItem() {
+        override val id: String get() = "static_${wallpaper.id}"
+    }
+}
+
 // ─────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────
@@ -117,7 +133,7 @@ enum class WallpaperFilter(val label: String, val emoji: String, val description
 suspend fun setWallpaper(context: Context, url: String): Result<Unit> {
     return withContext(Dispatchers.IO) {
         try {
-            val loader = ImageLoader(context)
+            val loader = Coil.imageLoader(context)
             val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
             val result = loader.execute(request)
             if (result is SuccessResult) {
@@ -154,11 +170,7 @@ fun HomeScreen(navController: NavController) {
 
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
-    val configuration = LocalConfiguration.current
     val scope = rememberCoroutineScope()
-
-    val screenWidth = configuration.screenWidthDp.dp
-    val cardHeight = (screenWidth - 24.dp) * (16f / 9f)
 
     var user by remember { mutableStateOf<UserRow?>(null) }
     // Cache so header doesn't show '?' for a moment when returning from Profile.
@@ -284,6 +296,34 @@ fun HomeScreen(navController: NavController) {
 
     val filteredLive = remember(selectedCategory, allWallpapers) {
         allWallpapers.filter { it.isLiveWallpaper() && it.matchesCategory(selectedCategory) }
+    }
+
+    // Preserve prior ALL ordering: live first, then static.
+    val feedItems = remember(activeFilter, filteredStatic, filteredLive) {
+        buildList {
+            if (activeFilter == WallpaperFilter.ALL || activeFilter == WallpaperFilter.LIVE) {
+                filteredLive.forEach { add(HomeFeedItem.Live(it)) }
+            }
+            if (activeFilter == WallpaperFilter.ALL || activeFilter == WallpaperFilter.STATIC) {
+                filteredStatic.forEach { add(HomeFeedItem.Static(it)) }
+            }
+        }
+    }
+
+    val pagerState = rememberPagerState(pageCount = { feedItems.size })
+
+    // Reset page safely when category/filter changes so we never show a stale item.
+    LaunchedEffect(selectedCategory, activeFilter) {
+        if (feedItems.isNotEmpty()) {
+            pagerState.scrollToPage(0)
+        }
+    }
+
+    // Guard against an out-of-range page if the filtered list shrinks.
+    LaunchedEffect(feedItems.size) {
+        if (feedItems.isNotEmpty() && pagerState.currentPage >= feedItems.size) {
+            pagerState.scrollToPage(0)
+        }
     }
 
     LaunchedEffect(snackbarMessage) {
@@ -568,87 +608,100 @@ fun HomeScreen(navController: NavController) {
                 }
             }
 
-            // ── Feed ─────────────────────────────
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp)
-            ) {
+            // ── Feed (Reels-style vertical pager) ────
+            when {
+                isWallpaperLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ShimmerCard(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp, vertical = 12.dp)
+                        )
+                    }
+                }
 
-                // Live wallpapers (same table as static; filtered by type)
-                if (activeFilter == WallpaperFilter.ALL || activeFilter == WallpaperFilter.LIVE) {
-                    if (isWallpaperLoading) {
-                        items(2) { ShimmerCard(cardHeight) }
-                    } else if (filteredLive.isNotEmpty()) {
-                        items(items = filteredLive, key = { "live_${it.id}" }) { wallpaper ->
-                            LiveWallpaperCard(
-                                videoUrl = wallpaper.url,
-                                title = null,
-                                cardHeight = cardHeight,
-                                onSetLiveWallpaper = {
-                                    setLiveWallpaper(context, wallpaper.url)
-                                    snackbarIsSuccess = true
-                                    snackbarMessage = "Opening live wallpaper picker ✅"
-                                }
+                feedItems.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (activeFilter == WallpaperFilter.LIVE) {
+                            Text(
+                                "No live wallpapers in this view",
+                                color = AppTextSecondary,
+                                fontSize = 14.sp
                             )
-                        }
-                    } else if (activeFilter == WallpaperFilter.LIVE) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().height(200.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🕌", fontSize = 48.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("No wallpapers yet", color = AppTextPrimary, fontSize = 16.sp)
                                 Text(
-                                    "No live wallpapers in this view",
+                                    "Coming soon insha'Allah",
                                     color = AppTextSecondary,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp
                                 )
                             }
                         }
                     }
                 }
 
-                // Static wallpapers
-                if (activeFilter == WallpaperFilter.ALL || activeFilter == WallpaperFilter.STATIC) {
-                    if (isWallpaperLoading) {
-                        items(3) { ShimmerCard(cardHeight) }
-                    } else if (filteredStatic.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().height(300.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("🕌", fontSize = 48.sp)
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text("No wallpapers yet", color = AppTextPrimary, fontSize = 16.sp)
-                                    Text(
-                                        "Coming soon insha'Allah",
-                                        color = AppTextSecondary,
-                                        fontSize = 13.sp
-                                    )
-                                }
+                else -> {
+                    VerticalPager(
+                        state = pagerState,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        beyondViewportPageCount = 1,
+                        key = { page -> feedItems[page].id },
+                    ) { page ->
+                        val item = feedItems[page]
+                        val isActivePage = pagerState.currentPage == page
+                        when (item) {
+                            is HomeFeedItem.Live -> {
+                                LiveWallpaperCard(
+                                    videoUrl = item.wallpaper.url,
+                                    title = null,
+                                    isActive = isActivePage,
+                                    onSetLiveWallpaper = {
+                                        setLiveWallpaper(context, item.wallpaper.url)
+                                        snackbarIsSuccess = true
+                                        snackbarMessage = "Opening live wallpaper picker ✅"
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                )
                             }
-                        }
-                    } else {
-                        items(items = filteredStatic, key = { "static_${it.id}" }) { wallpaper ->
-                            WallpaperCard(
-                                url = wallpaper.url,
-                                cardHeight = cardHeight,
-                                isSettingWallpaper = settingWallpaperUrl == wallpaper.url,
-                                onSetWallpaper = {
-                                    if (settingWallpaperUrl != null) return@WallpaperCard
-                                    settingWallpaperUrl = wallpaper.url
-                                    scope.launch {
-                                        val result = setWallpaper(context, wallpaper.url)
-                                        settingWallpaperUrl = null
-                                        snackbarIsSuccess = result.isSuccess
-                                        snackbarMessage = if (result.isSuccess)
-                                            "Wallpaper set successfully ✅"
-                                        else "Failed to set wallpaper ❌"
-                                    }
-                                }
-                            )
+
+                            is HomeFeedItem.Static -> {
+                                WallpaperCard(
+                                    url = item.wallpaper.url,
+                                    isSettingWallpaper = settingWallpaperUrl == item.wallpaper.url,
+                                    onSetWallpaper = {
+                                        if (settingWallpaperUrl != null) return@WallpaperCard
+                                        settingWallpaperUrl = item.wallpaper.url
+                                        scope.launch {
+                                            val result = setWallpaper(context, item.wallpaper.url)
+                                            settingWallpaperUrl = null
+                                            snackbarIsSuccess = result.isSuccess
+                                            snackbarMessage = if (result.isSuccess)
+                                                "Wallpaper set successfully ✅"
+                                            else "Failed to set wallpaper ❌"
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -682,16 +735,22 @@ fun HomeScreen(navController: NavController) {
 // ─────────────────────────────────────────
 
 @Composable
-fun ShimmerCard(cardHeight: Dp) {
+fun ShimmerCard(
+    modifier: Modifier = Modifier,
+    cardHeight: Dp? = null,
+) {
     Card(
         shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        modifier = if (cardHeight != null) {
+            modifier.fillMaxWidth().height(cardHeight)
+        } else {
+            modifier.fillMaxWidth()
+        },
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(cardHeight)
+                .fillMaxSize()
                 .background(Color(0xFFE0E0E0)),
             contentAlignment = Alignment.Center
         ) {
@@ -713,18 +772,30 @@ fun ShimmerCard(cardHeight: Dp) {
 fun LiveWallpaperCard(
     videoUrl: String,
     title: String?,
-    cardHeight: Dp,
-    onSetLiveWallpaper: () -> Unit
+    isActive: Boolean,
+    onSetLiveWallpaper: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentIsActive by rememberUpdatedState(isActive)
 
     val exoPlayer = remember(videoUrl) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(videoUrl))
             repeatMode = ExoPlayer.REPEAT_MODE_ALL
             volume = 0f
+            playWhenReady = false
             prepare()
-            playWhenReady = true
+        }
+    }
+
+    LaunchedEffect(isActive) {
+        exoPlayer.playWhenReady = isActive
+        if (isActive) {
+            exoPlayer.play()
+        } else {
+            exoPlayer.pause()
         }
     }
 
@@ -732,12 +803,33 @@ fun LiveWallpaperCard(
         onDispose { exoPlayer.release() }
     }
 
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP -> {
+                    exoPlayer.playWhenReady = false
+                    exoPlayer.pause()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (currentIsActive) {
+                        exoPlayer.playWhenReady = true
+                        exoPlayer.play()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Card(
         shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        modifier = modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Box(modifier = Modifier.fillMaxWidth().height(cardHeight)) {
+        Box(modifier = Modifier.fillMaxSize()) {
 
             Box(modifier = Modifier.fillMaxSize().background(Color(0xFFE8EDE9)))
 
@@ -752,6 +844,9 @@ fun LiveWallpaperCard(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                     }
+                },
+                update = { view ->
+                    view.player = exoPlayer
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -828,24 +923,36 @@ fun LiveWallpaperCard(
 @Composable
 fun WallpaperCard(
     url: String,
-    cardHeight: Dp,
     isSettingWallpaper: Boolean,
-    onSetWallpaper: () -> Unit
+    onSetWallpaper: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val requestSize = remember(configuration.screenWidthDp, configuration.screenHeightDp, density) {
+        with(density) {
+            Size(
+                configuration.screenWidthDp.dp.roundToPx(),
+                configuration.screenHeightDp.dp.roundToPx(),
+            )
+        }
+    }
+
     Card(
         shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        modifier = modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Box(modifier = Modifier.fillMaxWidth().height(cardHeight)) {
+        Box(modifier = Modifier.fillMaxSize()) {
 
             Box(modifier = Modifier.fillMaxSize().background(Color(0xFFE8E8E8)))
 
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
+                model = ImageRequest.Builder(context)
                     .data(url)
-                    .crossfade(true)
-                    .crossfade(400)
+                    .size(requestSize)
+                    .crossfade(200)
                     .memoryCacheKey(url)
                     .diskCacheKey(url)
                     .build(),
