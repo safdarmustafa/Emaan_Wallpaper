@@ -1,11 +1,14 @@
 package com.squarenova.emaanwallpapers.ui.subscription
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,15 +18,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.NightsStay
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,8 +46,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,7 +61,10 @@ import androidx.navigation.NavController
 import com.razorpay.Checkout
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
+import com.squarenova.emaanwallpapers.data.UserAccountLookup
+import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
@@ -176,20 +184,22 @@ fun SubscriptionScreen(navController: NavController) {
         phone = dataStoreManager.phoneNumber.firstOrNull() ?: ""
         if (phone.isNotBlank()) {
             AnalyticsManager.identify(phone)
-            val row = try {
-                SupabaseClient.client
-                    .postgrest["users"]
-                    .select { filter { eq("phone_number", phone) } }
-                    .decodeList<SubscriptionResumeUserRow>()
-                    .firstOrNull()
-            } catch (_: Exception) {
-                null
-            }
-            hasTrialPaid = row?.trial_paid == true
+            when (val account = UserAccountQueries.lookupByPhone<SubscriptionResumeUserRow>(phone)) {
+                UserAccountLookup.Missing -> {
+                    LocalSession.clear(context)
+                    LocalSession.goToLogin(navController)
+                    return@LaunchedEffect
+                }
+                UserAccountLookup.Unreachable -> {
+                    hasTrialPaid = false
+                }
+                is UserAccountLookup.Found -> {
+                    val row = account.row
+                    hasTrialPaid = row.trial_paid == true
 
             if (SubscriptionEntitlement.hasPremiumAccess(
-                    row?.subscription_status,
-                    row?.trial_end,
+                    row.subscription_status,
+                    row.trial_end,
                 )
             ) {
                 Log.i("SUBSCRIPTION", "Valid entitlement on entry — routing to home")
@@ -199,10 +209,10 @@ fun SubscriptionScreen(navController: NavController) {
                 return@LaunchedEffect
             }
 
-            val subId = row?.razorpay_subscription_id?.trim().orEmpty()
+            val subId = row.razorpay_subscription_id?.trim().orEmpty()
             if (shouldResumeMandateSetup(
-                    row?.subscription_status,
-                    row?.trial_end,
+                    row.subscription_status,
+                    row.trial_end,
                     hasTrialPaid,
                     subId,
                 )
@@ -212,8 +222,10 @@ fun SubscriptionScreen(navController: NavController) {
                 if (BuildConfig.DEBUG) {
                     Log.d(
                         "SUBSCRIPTION",
-                        "Restored mandate setup: status=${row?.subscription_status}"
+                        "Restored mandate setup: status=${row.subscription_status}"
                     )
+                }
+            }
                 }
             }
         }
@@ -325,6 +337,17 @@ fun SubscriptionScreen(navController: NavController) {
             }
         }
     }
+
+    /** Toolbar / system back: leave paywall, never wipe the session. */
+    fun leavePaywall() {
+        showSetupExplanationScreen = false
+        showTrialSuccessScreen = false
+        if (!navController.popBackStack()) {
+            activity?.moveTaskToBack(true)
+        }
+    }
+
+    BackHandler { leavePaywall() }
 
     fun openMandateCheckout(subscriptionId: String) {
         if (!tryAcquireCheckoutFlight("openMandateCheckout", CheckoutKind.MANDATE)) {
@@ -514,6 +537,13 @@ fun SubscriptionScreen(navController: NavController) {
                                 currentCheckoutKind = CheckoutKind.NONE
                                 mandateLaunchHandled = false
                                 mandatePaymentSuccessReceived = true
+                                // Show the confirm overlay immediately so the paywall cannot flash
+                                // while the orchestrator starts (async). Logic is unchanged.
+                                confirming = true
+                                confirmingSoft = false
+                                showSetupExplanationScreen = false
+                                showTrialSuccessScreen = false
+                                isLoading = false
                                 SubscriptionOrchestrator.onMandatePaymentSuccess(
                                     phone = phoneForApi,
                                     subscriptionId = subId,
@@ -595,7 +625,8 @@ fun SubscriptionScreen(navController: NavController) {
 
             is SubscriptionState.SoftTimeout -> {
                 // Graceful, NOT a failure — the durable job keeps confirming in the background.
-                // We must NOT surface a retry that reopens Razorpay while it runs (duplicate risk).
+                // Keep the overlay up so the paywall does not flash. Browse still dismisses it.
+                // Tapping CTA still no-ops while SoftTimeout (resumeSubscriptionFlow ignores it).
                 confirming = true
                 confirmingSoft = true
                 showMandatePending = false
@@ -605,6 +636,16 @@ fun SubscriptionScreen(navController: NavController) {
             }
 
             is SubscriptionState.MandatePending -> {
+                if (mandatePaymentSuccessReceived) {
+                    // Checkout already succeeded — Razorpay "created" is lag, not incomplete AutoPay.
+                    confirming = true
+                    confirmingSoft = true
+                    showMandatePending = false
+                    isLoading = false
+                    showSetupExplanationScreen = false
+                    paymentErrorDialog = null
+                    return@LaunchedEffect
+                }
                 // Subscription created, but AutoPay mandate never completed. Not a failure.
                 // Retain the durable ticket (survives restart); offer a single resume action.
                 confirming = false
@@ -646,171 +687,186 @@ fun SubscriptionScreen(navController: NavController) {
         }
     }
 
-    val goldBrush = remember {
-        Brush.horizontalGradient(
-            listOf(
-                PremiumSubscriptionColors.Forest.copy(alpha = 0.35f),
-                PremiumSubscriptionColors.Sage.copy(alpha = 0.55f),
-                PremiumSubscriptionColors.Forest.copy(alpha = 0.35f),
-            )
-        )
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
         PremiumScreenBackground()
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(PremiumSubscriptionColors.Surface.copy(alpha = 0.96f))
-                    .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = { navigateBackToLogin() },
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = PremiumSubscriptionColors.TextPrimary
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 40.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Premium का पूरा अनुभव",
-                        color = PremiumSubscriptionColors.TextPrimary,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 26.sp,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "शांत, सुंदर Islamic wallpapers",
-                        color = PremiumSubscriptionColors.TextSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val compact = maxHeight < 680.dp
+            val tight = maxHeight < 600.dp
+            val priceSize = when {
+                tight -> 44.sp
+                compact -> 52.sp
+                else -> 60.sp
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(goldBrush)
-            )
+            val titleSize = when {
+                tight -> 24.sp
+                compact -> 28.sp
+                else -> 32.sp
+            }
 
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 22.dp, bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding(),
             ) {
-                Text(
-                    text = "हर दिन खूबसूरत Islamic wallpapers, रिंगटोन और reels का आनंद लें।",
-                    color = PremiumSubscriptionColors.TextSecondary,
-                    fontSize = 14.sp,
-                    lineHeight = 22.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = PremiumSubscriptionColors.Surface,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                    border = BorderStroke(1.dp, PremiumSubscriptionColors.BorderSubtle)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = if (tight) 2.dp else 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                    IconButton(
+                        onClick = { leavePaywall() },
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = PremiumSubscriptionColors.TextPrimary,
+                        ),
                     ) {
-                        PremiumFeatureRow(
-                            icon = Icons.Filled.Star,
-                            title = "Unlimited access",
-                            subtitle = "सभी premium wallpapers खोलें"
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            modifier = Modifier.size(22.dp),
                         )
-                        PremiumFeatureRow(
-                            icon = Icons.Filled.Favorite,
-                            title = "बिना ads",
-                            subtitle = "बिना रुकावट का अनुभव"
+                    }
+                    Text(
+                        text = "प्रीमियम",
+                        color = PremiumSubscriptionColors.TextPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = if (tight) Arrangement.Center else Arrangement.SpaceEvenly,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (tight) 48.dp else 56.dp)
+                                .clip(CircleShape)
+                                .background(PremiumSubscriptionColors.Gold.copy(alpha = 0.10f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.NightsStay,
+                                contentDescription = null,
+                                tint = PremiumSubscriptionColors.Gold,
+                                modifier = Modifier.size(if (tight) 22.dp else 26.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(if (tight) 10.dp else 16.dp))
+                        Text(
+                            text = "Emaan Premium",
+                            color = PremiumSubscriptionColors.TextPrimary,
+                            fontSize = titleSize,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.4.sp,
+                            textAlign = TextAlign.Center,
                         )
-                        PremiumFeatureRow(
-                            icon = Icons.AutoMirrored.Filled.List,
-                            title = "HD downloads",
-                            subtitle = "साफ़ और sharp visuals"
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "इस्लामिक वॉलपेपर, रिंगटोन और रील्स\nअब एक ही जगह",
+                            color = PremiumSubscriptionColors.TextSecondary,
+                            fontSize = 14.sp,
+                            lineHeight = 21.sp,
+                            fontWeight = FontWeight.Normal,
+                            textAlign = TextAlign.Center,
                         )
-                        PremiumFeatureRow(
-                            icon = Icons.Filled.Check,
-                            title = "रोज़ नए wallpapers",
-                            subtitle = "नए designs, रोज़ाना"
+                    }
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "अभी सिर्फ",
+                            color = PremiumSubscriptionColors.TextMuted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal,
+                            letterSpacing = 0.8.sp,
+                        )
+                        Text(
+                            text = "₹5",
+                            color = PremiumSubscriptionColors.TextPrimary,
+                            fontSize = priceSize,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-1).sp,
+                        )
+                        Text(
+                            text = "देकर आज ही शुरू करें",
+                            color = PremiumSubscriptionColors.TextSecondary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Normal,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        SubscriptionBenefit(
+                            icon = Icons.Outlined.Wallpaper,
+                            title = "इस्लामिक वॉलपेपर",
+                            subtitle = "HD क्वालिटी",
+                            compact = compact,
+                        )
+                        SubscriptionBenefit(
+                            icon = Icons.Outlined.MusicNote,
+                            title = "इस्लामिक रिंगटोन",
+                            subtitle = "बेहतरीन कलेक्शन",
+                            compact = compact,
+                        )
+                        SubscriptionBenefit(
+                            icon = Icons.Outlined.PlayCircle,
+                            title = "इस्लामिक रील्स",
+                            subtitle = "देखें और शेयर करें",
+                            compact = compact,
                         )
                     }
                 }
 
-                PremiumPricingHighlightCard()
-
-                Text(
-                    text = "Trial और AutoPay सेटअप के लिए अभी सिर्फ ₹5 लगेगा — यह राशि वापस (refundable) है। " +
-                        "Trial के बाद ₹249/माह AutoPay चालू रहेगा।",
-                    color = PremiumSubscriptionColors.TextSecondary,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                PremiumGradientCtaButton(
-                    text = "Free Trial शुरू करें",
-                    onClick = {
-                        resumeSubscriptionFlow()
-                    },
-                    enabled = !showTrialSuccessScreen && !showSetupExplanationScreen,
-                    loading = isLoading && !showSetupExplanationScreen
-                )
-
-                Text(
-                    text = "₹5 सिर्फ trial और mandate verify करने के लिए है, और refundable है। " +
-                        "इसके अलावा आपकी अनुमति के बिना कोई अतिरिक्त charge नहीं। " +
-                        "Subscription हर महीने ₹249 पर अपने आप renew होता है।",
-                    color = PremiumSubscriptionColors.TextMuted,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                TextButton(
-                    onClick = {
-                        LegalUrlOpener.openSubscriptionDisclosure(context)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = if (tight) 8.dp else 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(
-                        text = "Subscription शर्तें और auto-renewal details देखें",
-                        color = PremiumSubscriptionColors.Forest,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
+                    PremiumGradientCtaButton(
+                        text = "₹5 देकर आज ही शुरू करें",
+                        onClick = { resumeSubscriptionFlow() },
+                        enabled = !showTrialSuccessScreen && !showSetupExplanationScreen,
+                        loading = isLoading && !showSetupExplanationScreen,
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lock,
+                            contentDescription = null,
+                            tint = PremiumSubscriptionColors.TextMuted,
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "सुरक्षित भुगतान",
+                            color = PremiumSubscriptionColors.TextMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal,
+                        )
+                    }
+                    TextButton(
+                        onClick = { LegalUrlOpener.openSubscriptionDisclosure(context) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "Subscription शर्तें देखें",
+                            color = PremiumSubscriptionColors.TextMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Normal,
+                        )
+                    }
                 }
             }
         }
@@ -944,14 +1000,14 @@ private fun SubscriptionConfirmingOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xE6F7F5F0)),
+            .background(Color(0xE6F6F3EC)),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 40.dp),
         ) {
-            CircularProgressIndicator(color = PremiumSubscriptionColors.Forest)
+            CircularProgressIndicator(color = PremiumSubscriptionColors.Gold)
             Spacer(modifier = Modifier.height(20.dp))
             Text(
                 text = if (soft) {
@@ -983,7 +1039,7 @@ private fun SubscriptionConfirmingOverlay(
                 TextButton(onClick = onContinueInBackground) {
                     Text(
                         text = "Browse करते रहें",
-                        color = PremiumSubscriptionColors.Forest,
+                        color = PremiumSubscriptionColors.Gold,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1009,7 +1065,7 @@ private fun MandatePendingOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xCC0D5C4B)),
+            .background(Color(0xE6F6F3EC)),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
@@ -1017,7 +1073,7 @@ private fun MandatePendingOverlay(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp),
             shape = RoundedCornerShape(24.dp),
-            color = PremiumSubscriptionColors.Surface,
+            color = PremiumSubscriptionColors.ForestCard,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
             border = BorderStroke(1.dp, PremiumSubscriptionColors.BorderSubtle),
@@ -1037,7 +1093,7 @@ private fun MandatePendingOverlay(
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "आपका subscription बन चुका है, लेकिन AutoPay setup अधूरा है। " +
-                        "इसे अभी पूरा करें ताकि 1 दिन का Free Trial और Premium access शुरू हो सके।",
+                        "इसे अभी पूरा करें ताकि Premium access शुरू हो सके।",
                     color = PremiumSubscriptionColors.TextSecondary,
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
@@ -1045,8 +1101,8 @@ private fun MandatePendingOverlay(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "इस step पर सिर्फ ₹5 लगेगा — यह refundable है",
-                    color = PremiumSubscriptionColors.Forest,
+                    text = "इस step पर सिर्फ ₹5 लगेगा",
+                    color = PremiumSubscriptionColors.Gold,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
@@ -1060,5 +1116,43 @@ private fun MandatePendingOverlay(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SubscriptionBenefit(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    compact: Boolean,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(104.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = PremiumSubscriptionColors.Gold,
+            modifier = Modifier.size(if (compact) 20.dp else 22.dp),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = title,
+            color = PremiumSubscriptionColors.TextPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            lineHeight = 16.sp,
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = subtitle,
+            color = PremiumSubscriptionColors.TextMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Normal,
+            textAlign = TextAlign.Center,
+            lineHeight = 14.sp,
+        )
     }
 }

@@ -36,6 +36,8 @@ object EntitlementRepository {
         val hasPremium: Boolean,
         /** True when activate-trial succeeded during this refresh (server idempotent). */
         val activateTrialSucceeded: Boolean = false,
+        /** True when users table returned no row (account deleted). Not a network failure. */
+        val accountMissing: Boolean = false,
     )
 
     private const val TAG = "EntitlementRepository"
@@ -85,47 +87,54 @@ object EntitlementRepository {
         val cached = readCache()
         if (cleanPhone.isBlank()) return RefreshResult(hasPremium = cached)
 
-        // Fetch is INCONCLUSIVE when it returns null. A logged-in user always has a row, so a null
-        // here means offline / transient / RLS failure — NOT "user is not premium". We must never
-        // downgrade a previously-granted entitlement on an inconclusive read, otherwise a paid user
-        // who opens the app offline would be wrongly paywalled and their cache clobbered to false.
-        val row = MandateEntitlementResolver.fetchRow(cleanPhone)
-        if (row == null) {
-            SecureLog.w(TAG, "refresh inconclusive (no row / offline) — keeping cached=$cached")
-            return RefreshResult(hasPremium = cached)
-        }
+        // Unreachable (offline) keeps cache. Missing (empty users row) is a deleted account.
+        when (val lookup = MandateEntitlementResolver.lookupRow(cleanPhone)) {
+            MandateEntitlementResolver.RowLookup.Unreachable -> {
+                SecureLog.w(TAG, "refresh inconclusive (offline) — keeping cached=$cached")
+                return RefreshResult(hasPremium = cached)
+            }
+            MandateEntitlementResolver.RowLookup.Missing -> {
+                SecureLog.w(TAG, "refresh account missing — clearing cached premium")
+                lastStatus = null
+                persist(false)
+                _premium.value = false
+                return RefreshResult(hasPremium = false, accountMissing = true)
+            }
+            is MandateEntitlementResolver.RowLookup.Found -> {
+                val row = lookup.row
+                return try {
+                    val activation = MandateEntitlementResolver.ensureTrialActivatedIfNeeded(
+                        cleanPhone,
+                        row,
+                        skipActivateTrial = skipActivateTrial,
+                    )
+                    val finalRow = activation.row ?: row
 
-        return try {
-            val activation = MandateEntitlementResolver.ensureTrialActivatedIfNeeded(
-                cleanPhone,
-                row,
-                skipActivateTrial = skipActivateTrial,
-            )
-            val finalRow = activation.row ?: row
+                    val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
+                        subscriptionStatus = finalRow.subscription_status,
+                        trialEndIso = finalRow.trial_end,
+                    )
+                    lastStatus = finalRow.subscription_status
 
-            val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
-                subscriptionStatus = finalRow.subscription_status,
-                trialEndIso = finalRow.trial_end,
-            )
-            lastStatus = finalRow.subscription_status
+                    MandateDebugLog.syncResult(
+                        phone = cleanPhone,
+                        hasPremium = hasPremium,
+                        subscriptionStatus = finalRow.subscription_status,
+                        trialEnd = finalRow.trial_end,
+                    )
 
-            MandateDebugLog.syncResult(
-                phone = cleanPhone,
-                hasPremium = hasPremium,
-                subscriptionStatus = finalRow.subscription_status,
-                trialEnd = finalRow.trial_end,
-            )
-
-            persist(hasPremium)
-            _premium.value = hasPremium
-            SecureLog.d(TAG, "refresh phone=${SecureLog.redactPhone(cleanPhone)} premium=$hasPremium status=${finalRow.subscription_status}")
-            RefreshResult(
-                hasPremium = hasPremium,
-                activateTrialSucceeded = activation.activateTrialSucceeded,
-            )
-        } catch (e: Exception) {
-            SecureLog.w(TAG, "refresh compute/activate failed, keeping cached=$cached: ${e.message}")
-            RefreshResult(hasPremium = cached)
+                    persist(hasPremium)
+                    _premium.value = hasPremium
+                    SecureLog.d(TAG, "refresh phone=${SecureLog.redactPhone(cleanPhone)} premium=$hasPremium status=${finalRow.subscription_status}")
+                    RefreshResult(
+                        hasPremium = hasPremium,
+                        activateTrialSucceeded = activation.activateTrialSucceeded,
+                    )
+                } catch (e: Exception) {
+                    SecureLog.w(TAG, "refresh compute/activate failed, keeping cached=$cached: ${e.message}")
+                    RefreshResult(hasPremium = cached)
+                }
+            }
         }
     }
 

@@ -66,17 +66,17 @@ import com.squarenova.emaanwallpapers.theme.HomeFilterIconIdle
 import com.squarenova.emaanwallpapers.theme.HomeSurfaceStrip
 import com.squarenova.emaanwallpapers.ui.components.CompactTopBar
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
+import com.squarenova.emaanwallpapers.data.UserAccountLookup
+import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.network.WallpaperCatalog
 import com.squarenova.emaanwallpapers.network.WallpaperRow
 import com.squarenova.emaanwallpapers.network.isLiveWallpaper
 import com.squarenova.emaanwallpapers.network.isStaticWallpaper
 import com.squarenova.emaanwallpapers.network.matchesCategory
-import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.service.GifWallpaperService
-import io.github.jan.supabase.postgrest.postgrest
-import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
@@ -204,6 +204,8 @@ fun HomeScreen(navController: NavController) {
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     var redirectedToSubscription by remember { mutableStateOf(false) }
+    /** Catalog stays hidden until premium is confirmed — no unpaid wallpaper flash. */
+    var catalogAllowed by remember { mutableStateOf(false) }
 
     LaunchedEffect(isLoading, user?.subscription_status, user?.trial_end, user?.phone_number) {
         if (isLoading || redirectedToSubscription) return@LaunchedEffect
@@ -214,6 +216,7 @@ fun HomeScreen(navController: NavController) {
                 user?.is_subscribed,
             )
         ) {
+            catalogAllowed = true
             return@LaunchedEffect
         }
 
@@ -222,35 +225,30 @@ fun HomeScreen(navController: NavController) {
 
         val phone = dataStoreManager.phoneNumber.firstOrNull()
         if (!phone.isNullOrEmpty()) {
-            try {
-                val refreshed = SupabaseClient.client
-                    .postgrest["users"]
-                    .select(
-                        columns = Columns.list(
-                            "phone_number",
-                            "first_name",
-                            "last_name",
-                            "avatar_url",
-                            "is_subscribed",
-                            "subscription_status",
-                            "trial_end",
-                            "razorpay_subscription_id"
-                        )
-                    ) { filter { eq("phone_number", phone) } }
-                    .decodeSingle<UserRow>()
-                user = refreshed
-                avatarUrl = refreshed.avatar_url
-                cachedFirstName = refreshed.first_name
-                if (SubscriptionEntitlement.hasPremiumAccess(
-                        refreshed.subscription_status,
-                        refreshed.trial_end,
-                        refreshed.is_subscribed,
-                    )
-                ) {
+            when (val lookup = UserAccountQueries.lookupByPhone<UserRow>(phone)) {
+                UserAccountLookup.Missing -> {
+                    LocalSession.clear(context)
+                    LocalSession.goToLogin(navController)
                     return@LaunchedEffect
                 }
-            } catch (e: Exception) {
-                Log.e("HOME_ACCESS_REFRESH", e.message ?: "Unknown")
+                is UserAccountLookup.Found -> {
+                    val refreshed = lookup.row
+                    user = refreshed
+                    avatarUrl = refreshed.avatar_url
+                    cachedFirstName = refreshed.first_name
+                    if (SubscriptionEntitlement.hasPremiumAccess(
+                            refreshed.subscription_status,
+                            refreshed.trial_end,
+                            refreshed.is_subscribed,
+                        )
+                    ) {
+                        catalogAllowed = true
+                        return@LaunchedEffect
+                    }
+                }
+                UserAccountLookup.Unreachable -> {
+                    Log.e("HOME_ACCESS_REFRESH", "users lookup unreachable")
+                }
             }
         }
 
@@ -258,8 +256,17 @@ fun HomeScreen(navController: NavController) {
         //  • returns the cached premium value on an inconclusive/offline read (never downgrades), and
         //  • self-heals an authenticated→trial lag (calls activate-trial),
         // so a paid user is NEVER wrongly paywalled by a failed server fetch or a transient status.
-        if (!phone.isNullOrEmpty() && EntitlementRepository.refresh(phone)) {
-            return@LaunchedEffect
+        if (!phone.isNullOrEmpty()) {
+            val refresh = EntitlementRepository.refreshDetailed(phone)
+            if (refresh.accountMissing) {
+                LocalSession.clear(context)
+                LocalSession.goToLogin(navController)
+                return@LaunchedEffect
+            }
+            if (refresh.hasPremium) {
+                catalogAllowed = true
+                return@LaunchedEffect
+            }
         }
 
         if (!redirectedToSubscription && !SubscriptionEntitlement.hasPremiumAccess(
@@ -336,25 +343,30 @@ fun HomeScreen(navController: NavController) {
         try {
             val phone = dataStoreManager.phoneNumber.firstOrNull()
             if (!phone.isNullOrEmpty()) {
-                val result = SupabaseClient.client
-                    .postgrest["users"]
-                    .select(
-                        columns = Columns.list(
-                            "phone_number",
-                            "first_name",
-                            "last_name",
-                            "avatar_url",
-                            "is_subscribed",
-                            "subscription_status",
-                            "trial_end",
-                            "razorpay_subscription_id"
-                        )
-                    ) { filter { eq("phone_number", phone) } }
-                    .decodeSingle<UserRow>()
-                user = result
-                avatarUrl = result.avatar_url
-                cachedFirstName = result.first_name
-
+                when (val lookup = UserAccountQueries.lookupByPhone<UserRow>(phone)) {
+                    UserAccountLookup.Missing -> {
+                        LocalSession.clear(context)
+                        LocalSession.goToLogin(navController)
+                        return@LaunchedEffect
+                    }
+                    is UserAccountLookup.Found -> {
+                        val result = lookup.row
+                        user = result
+                        avatarUrl = result.avatar_url
+                        cachedFirstName = result.first_name
+                        if (SubscriptionEntitlement.hasPremiumAccess(
+                                result.subscription_status,
+                                result.trial_end,
+                                result.is_subscribed,
+                            )
+                        ) {
+                            catalogAllowed = true
+                        }
+                    }
+                    UserAccountLookup.Unreachable -> {
+                        Log.e("HOME_USER_ERROR", "users lookup unreachable")
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("HOME_USER_ERROR", e.message ?: "Unknown")
@@ -371,24 +383,29 @@ fun HomeScreen(navController: NavController) {
                     try {
                         val phone = dataStoreManager.phoneNumber.firstOrNull()
                         if (!phone.isNullOrEmpty()) {
-                            val result = SupabaseClient.client
-                                .postgrest["users"]
-                                .select(
-                                    columns = Columns.list(
-                                        "phone_number",
-                                        "first_name",
-                                        "last_name",
-                                        "avatar_url",
-                                        "is_subscribed",
-                                        "subscription_status",
-                                        "trial_end",
-                                        "razorpay_subscription_id"
-                                    )
-                                ) { filter { eq("phone_number", phone) } }
-                                .decodeSingle<UserRow>()
-                            user = result
-                            avatarUrl = result.avatar_url
-                            cachedFirstName = result.first_name
+                            when (val lookup = UserAccountQueries.lookupByPhone<UserRow>(phone)) {
+                                UserAccountLookup.Missing -> {
+                                    LocalSession.clear(context)
+                                    LocalSession.goToLogin(navController)
+                                }
+                                is UserAccountLookup.Found -> {
+                                    val result = lookup.row
+                                    user = result
+                                    avatarUrl = result.avatar_url
+                                    cachedFirstName = result.first_name
+                                    if (SubscriptionEntitlement.hasPremiumAccess(
+                                            result.subscription_status,
+                                            result.trial_end,
+                                            result.is_subscribed,
+                                        )
+                                    ) {
+                                        catalogAllowed = true
+                                    }
+                                }
+                                UserAccountLookup.Unreachable -> {
+                                    Log.e("HOME_USER_REFRESH_ERROR", "users lookup unreachable")
+                                }
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e("HOME_USER_REFRESH_ERROR", e.message ?: "Unknown")
@@ -400,7 +417,8 @@ fun HomeScreen(navController: NavController) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(catalogAllowed) {
+        if (!catalogAllowed) return@LaunchedEffect
         isWallpaperLoading = true
         try {
             val rows = WallpaperCatalog.fetchAll()

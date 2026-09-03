@@ -50,7 +50,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
+import com.squarenova.emaanwallpapers.data.LocalSession
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -178,9 +179,13 @@ fun ReelsScreen(navController: NavController) {
             }
             return@LaunchedEffect
         }
-        val hasPremium = UserSubscriptionSyncManager(dataStoreManager)
-            .syncUserSubscription(phone)
-        if (!hasPremium) {
+        val refresh = EntitlementRepository.refreshDetailed(phone)
+        if (refresh.accountMissing) {
+            LocalSession.clear(context)
+            LocalSession.goToLogin(navController)
+            return@LaunchedEffect
+        }
+        if (!refresh.hasPremium) {
             navController.navigate("subscription") {
                 popUpTo("reels") { inclusive = true }
             }

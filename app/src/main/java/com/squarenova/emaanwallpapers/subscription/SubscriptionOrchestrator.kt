@@ -49,17 +49,18 @@ object SubscriptionOrchestrator {
     private const val TAG = "SubscriptionOrchestrator"
 
     // Active (foreground-blocking overlay) budget before we soften to SoftTimeout UI.
-    private const val MAX_ACTIVE_MS = 60_000L
+    // Keep this short: confirmation continues in the background; the paywall must not stay locked.
+    private const val MAX_ACTIVE_MS = 15_000L
     // Total budget for one run. After this we stop working and retain the ticket; recovery
     // (foreground / restart) picks it up again. Prevents unbounded polling / battery drain.
     private const val HARD_CAP_MS = 300_000L
-    // First retry delay after verify/refresh miss. 600 ms is enough for Razorpay eventual
-    // consistency while keeping exponential backoff (×1.6, cap 8 s) unchanged for later retries.
-    private const val BACKOFF_START_MS = 600L
-    private const val BACKOFF_MAX_MS = 8_000L
-    private const val BACKOFF_FACTOR = 1.6
+    // First retry delay after verify/refresh miss. Tight early polls; cap stays modest so a slow
+    // Razorpay authenticated flip is picked up quickly without 3 stacked API retries per loop.
+    private const val BACKOFF_START_MS = 400L
+    private const val BACKOFF_MAX_MS = 4_000L
+    private const val BACKOFF_FACTOR = 1.5
     // Slower cadence during the extended (post-soft-timeout) phase.
-    private const val EXTENDED_INTERVAL_MS = 15_000L
+    private const val EXTENDED_INTERVAL_MS = 8_000L
     // A ticket older than this is abandoned. If the mandate was never approved within a day the
     // payment did not succeed; and if it did, the server (webhook) + entitlement refresh already
     // grant premium independently, so abandoning the ticket can never cost a paid user access.
@@ -69,6 +70,12 @@ object SubscriptionOrchestrator {
 
     /** Guarantees a single confirmation job (idempotency for duplicate callbacks/retries). */
     private val running = AtomicBoolean(false)
+    /**
+     * Razorpay payment-success (or a ticket that already has a payment id) is proof the user
+     * finished AutoPay. UPI can still report status "created" for a while — that lag must NOT
+     * surface [SubscriptionState.MandatePending].
+     */
+    private val paymentProven = AtomicBoolean(false)
     private val startLock = Mutex()
 
     @Volatile
@@ -107,10 +114,15 @@ object SubscriptionOrchestrator {
             SecureLog.w(TAG, "onMandatePaymentSuccess ignored — blank phone/sub")
             return
         }
+        if (paymentId.isNotBlank()) paymentProven.set(true)
         scope.launch {
             startLock.withLock {
                 if (running.get()) {
-                    SecureLog.i(TAG, "confirmation already running — ignoring duplicate mandate success")
+                    val existing = ticketStore?.load()
+                    if (existing != null && existing.subscriptionId == cleanSub && paymentId.isNotBlank()) {
+                        ticketStore?.save(existing.copy(paymentId = paymentId))
+                    }
+                    SecureLog.i(TAG, "confirmation already running — recorded payment proof, not restarting")
                     return@withLock
                 }
                 val ticket = ConfirmationTicket(
@@ -192,7 +204,10 @@ object SubscriptionOrchestrator {
     fun reset() {
         scope.launch {
             ticketStore?.clear()
-            if (!running.get()) _state.value = SubscriptionState.Idle
+            if (!running.get()) {
+                paymentProven.set(false)
+                _state.value = SubscriptionState.Idle
+            }
         }
     }
 
@@ -205,6 +220,7 @@ object SubscriptionOrchestrator {
             ticketStore?.clear()
             SubscriptionManager.clearPendingCheckout()
             EntitlementRepository.clearForLogout()
+            paymentProven.set(false)
             _state.value = SubscriptionState.Idle
         }
     }
@@ -231,6 +247,7 @@ object SubscriptionOrchestrator {
         val phone = initial.phone
         val subId = initial.subscriptionId
         val store = ticketStore
+        if (initial.paymentId.isNotBlank()) paymentProven.set(true)
 
         // Fast path: the webhook may already have granted premium server-side.
         _state.value = SubscriptionState.Confirming(ConfirmationPhase.SYNCING_ENTITLEMENT, subId, 0)
@@ -250,7 +267,7 @@ object SubscriptionOrchestrator {
         // immediately instead of spinning for a full active budget. Fresh tickets skip this
         // (right after the user approves the mandate, Razorpay may still be eventually-consistent).
         val ageMs = System.currentTimeMillis() - initial.createdAtMs
-        if (!initial.mandateVerified && ageMs > MAX_ACTIVE_MS && isMandateIncomplete(subId)) {
+        if (!initial.mandateVerified && ageMs > MAX_ACTIVE_MS && shouldOfferMandateResume(subId)) {
             SecureLog.i(TAG, "recover: mandate still incomplete (created) — MandatePending sub=${SecureLog.redactId(subId)}")
             _state.value = SubscriptionState.MandatePending(subId)
             return
@@ -266,7 +283,7 @@ object SubscriptionOrchestrator {
             val elapsed = System.currentTimeMillis() - startMs
             if (elapsed >= HARD_CAP_MS) {
                 // Stop working this run; keep the ticket. Foreground/restart recovery resumes it.
-                if (!verified && isMandateIncomplete(subId)) {
+                if (!verified && shouldOfferMandateResume(subId)) {
                     SecureLog.i(TAG, "hard cap — mandate incomplete (created) — MandatePending sub=${SecureLog.redactId(subId)}")
                     _state.value = SubscriptionState.MandatePending(subId)
                     return
@@ -282,7 +299,7 @@ object SubscriptionOrchestrator {
             val extended = elapsed >= MAX_ACTIVE_MS
             if (extended && !softAnnounced) {
                 softAnnounced = true
-                if (!verified && isMandateIncomplete(subId)) {
+                if (!verified && shouldOfferMandateResume(subId)) {
                     SecureLog.i(TAG, "active budget elapsed — mandate incomplete (created) — MandatePending sub=${SecureLog.redactId(subId)}")
                     _state.value = SubscriptionState.MandatePending(subId)
                     return
@@ -306,6 +323,16 @@ object SubscriptionOrchestrator {
                     val msg = v.exceptionOrNull()?.message.orEmpty().lowercase()
                     if (isTerminal(msg)) {
                         fail(store, msg.ifBlank { "subscription_terminal" })
+                        return
+                    }
+                    // Razorpay GET can stay "created" while the webhook already granted trial.
+                    // Do not wait on verify — read entitlement and finish if premium is live.
+                    val early = EntitlementRepository.refreshDetailed(
+                        phone,
+                        skipActivateTrial = true,
+                    )
+                    if (early.hasPremium) {
+                        succeed(store, subId)
                         return
                     }
                     store?.save(initial.copy(attempt = attempt, phase = ConfirmationPhase.VERIFYING.name))
@@ -415,13 +442,14 @@ object SubscriptionOrchestrator {
         "cancelled" in message || "halted" in message || "completed" in message || "expired" in message
 
     /**
-     * True when the subscription exists at Razorpay but the mandate was never approved (status is
-     * still "created"). Distinguishes an abandoned AutoPay setup from genuine entitlement lag.
-     * A network/read failure returns false so we fall back to the (still-confirming) SoftTimeout —
-     * never wrongly telling a user who completed the mandate that setup is incomplete.
+     * True only when we have no payment-success proof AND Razorpay is still "created".
+     * After a successful Checkout payment, UPI often lags on "created" — that is SoftTimeout,
+     * not "complete AutoPay again". A network/read failure also returns false.
      */
-    private suspend fun isMandateIncomplete(subId: String): Boolean =
-        SubscriptionApi.subscriptionStatus(subId).getOrNull()?.trim()?.lowercase() == "created"
+    private suspend fun shouldOfferMandateResume(subId: String): Boolean {
+        if (paymentProven.get()) return false
+        return SubscriptionApi.subscriptionStatus(subId).getOrNull()?.trim()?.lowercase() == "created"
+    }
 
     private suspend fun currentPhone(): String = try {
         val ctx = appContext ?: return ""

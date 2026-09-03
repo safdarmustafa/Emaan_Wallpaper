@@ -280,13 +280,61 @@ serve(async (req) => {
     }
 
     if (eventName === "subscription.authenticated") {
+      // Same trial grant as activate-trial (authenticated branch). Lets Android's first
+      // entitlement refresh succeed without waiting on a separate activate-trial poll.
+      // Never downgrade trial/active. Never extend an existing future trial_end.
+      const TRIAL_MS = 1 * 24 * 60 * 60 * 1000;
+      const { data: authRows } = await supabase
+        .from("users")
+        .select("subscription_status, trial_end")
+        .eq("razorpay_subscription_id", subId)
+        .limit(1);
+      const authRow = authRows?.[0] as
+        | { subscription_status?: unknown; trial_end?: unknown }
+        | undefined;
+      const currentStatus =
+        typeof authRow?.subscription_status === "string"
+          ? authRow.subscription_status.trim().toLowerCase()
+          : "";
+      if (currentStatus === "active" || currentStatus === "trial") {
+        console.log(
+          JSON.stringify({
+            fn: "razorpay-webhook",
+            step: "authenticated_skip_already_premium",
+            subscription_id: subId,
+            existing_status: currentStatus,
+          }),
+        );
+        await markProcessed();
+        return new Response("OK", { status: 200 });
+      }
+      const existingTrialEnd =
+        typeof authRow?.trial_end === "string" ? authRow.trial_end : "";
+      const existingTrialMs = Date.parse(existingTrialEnd);
+      const hasFutureTrial =
+        existingTrialEnd !== "" &&
+        !Number.isNaN(existingTrialMs) &&
+        existingTrialMs > Date.now();
+      const trialEnd = hasFutureTrial
+        ? existingTrialEnd
+        : new Date(Date.now() + TRIAL_MS).toISOString();
       await supabase
         .from("users")
         .update({
           is_subscribed: false,
-          subscription_status: "authenticated",
+          subscription_status: "trial",
+          trial_paid: true,
+          trial_end: trialEnd,
         })
         .eq("razorpay_subscription_id", subId);
+      console.log(
+        JSON.stringify({
+          fn: "razorpay-webhook",
+          step: "authenticated_trial_granted",
+          subscription_id: subId,
+          trial_end: trialEnd,
+        }),
+      );
       await markProcessed();
       return new Response("OK", { status: 200 });
     }

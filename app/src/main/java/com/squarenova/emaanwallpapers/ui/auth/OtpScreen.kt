@@ -260,7 +260,7 @@ fun OtpScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     var focusedIndex by remember { mutableIntStateOf(-1) }
 
@@ -271,7 +271,7 @@ fun OtpScreen(
                             value = digit,
                             onValueChange = { onOtpDigitChange(index, it) },
                             modifier = Modifier
-                                .width(44.dp)
+                                .weight(1f)
                                 .height(52.dp)
                                 .focusRequester(otpFocusRequesters[index])
                                 .onFocusChanged { focusState ->

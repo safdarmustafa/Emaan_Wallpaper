@@ -160,39 +160,48 @@ object SubscriptionApi {
         }
     }
 
-    suspend fun verifyMandate(subscriptionId: String): Result<String> = withRetry("verifyMandate") {
-        try {
-            val json = JSONObject().apply { put("subscription_id", subscriptionId) }
-            val request = Request.Builder()
-                .url(functionsBaseUrl() + "validate-subscription-status")
-                .addHeader("Authorization", anonBearer())
-                .addHeader("Content-Type", "application/json")
-                .post(json.toString().toRequestBody(JSON))
-                .build()
+    /**
+     * Single Razorpay status read. Do NOT wrap "created" / not-yet-authenticated in [withRetry] —
+     * that lag is expected after UPI; triple-hitting the edge function only stalls confirmation.
+     * The orchestrator already polls with backoff.
+     */
+    suspend fun verifyMandate(subscriptionId: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = JSONObject().apply { put("subscription_id", subscriptionId) }
+                val request = Request.Builder()
+                    .url(functionsBaseUrl() + "validate-subscription-status")
+                    .addHeader("Authorization", anonBearer())
+                    .addHeader("Content-Type", "application/json")
+                    .post(json.toString().toRequestBody(JSON))
+                    .build()
 
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: ""
-            Log.d(
-                "SubscriptionDebug",
-                "4b. verifyMandate httpCode=${response.code} sub=$subscriptionId body=$body"
-            )
-            if (!response.isSuccessful) {
-                return@withRetry Result.failure(
-                    Exception(parseEdgeFunctionError(body, "validate-subscription-status").ifBlank { "verifyMandate failed" })
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+                Log.d(
+                    "SubscriptionDebug",
+                    "4b. verifyMandate httpCode=${response.code} sub=$subscriptionId body=$body"
                 )
-            }
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        Exception(
+                            parseEdgeFunctionError(body, "validate-subscription-status")
+                                .ifBlank { "verifyMandate failed" },
+                        )
+                    )
+                }
 
-            val status = JSONObject(body).optString("razorpay_status")
-            Log.d("SubscriptionDebug", "4b. verifyMandate razorpay_status=$status sub=$subscriptionId")
-            if (status == "authenticated" || status == "active") {
-                Result.success(status)
-            } else {
-                Result.failure(Exception("Mandate not approved yet (status: $status)"))
+                val status = JSONObject(body).optString("razorpay_status")
+                Log.d("SubscriptionDebug", "4b. verifyMandate razorpay_status=$status sub=$subscriptionId")
+                if (status == "authenticated" || status == "active") {
+                    Result.success(status)
+                } else {
+                    Result.failure(Exception("Mandate not approved yet (status: $status)"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
-    }
 
     /**
      * One-shot authoritative Razorpay status for a subscription (no retry — used at timeout decision

@@ -1,8 +1,6 @@
 package com.squarenova.emaanwallpapers.data
 
 import com.squarenova.emaanwallpapers.network.SubscriptionApi
-import com.squarenova.emaanwallpapers.network.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.Serializable
 
 /**
@@ -22,19 +20,25 @@ object MandateEntitlementResolver {
         val trial_paid: Boolean? = false,
     )
 
-    suspend fun fetchRow(phone: String): EntitlementRow? {
-        val cleanPhone = phone.trim()
-        if (cleanPhone.isBlank()) return null
-        return try {
-            SupabaseClient.client
-                .postgrest["users"]
-                .select { filter { eq("phone_number", cleanPhone) } }
-                .decodeList<EntitlementRow>()
-                .firstOrNull()
-        } catch (_: Exception) {
-            null
+    sealed class RowLookup {
+        data class Found(val row: EntitlementRow) : RowLookup()
+        data object Missing : RowLookup()
+        data object Unreachable : RowLookup()
+    }
+
+    suspend fun lookupRow(phone: String): RowLookup {
+        return when (val result = UserAccountQueries.lookupByPhone<EntitlementRow>(phone)) {
+            is UserAccountLookup.Found -> RowLookup.Found(result.row)
+            UserAccountLookup.Missing -> RowLookup.Missing
+            UserAccountLookup.Unreachable -> RowLookup.Unreachable
         }
     }
+
+    suspend fun fetchRow(phone: String): EntitlementRow? =
+        when (val result = lookupRow(phone)) {
+            is RowLookup.Found -> result.row
+            RowLookup.Missing, RowLookup.Unreachable -> null
+        }
 
     fun needsTrialActivation(row: EntitlementRow?): Boolean {
         if (row?.trial_paid != true) return false

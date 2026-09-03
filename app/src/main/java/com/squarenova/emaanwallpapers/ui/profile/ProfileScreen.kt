@@ -68,6 +68,9 @@ import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
+import com.squarenova.emaanwallpapers.data.LocalSession
+import com.squarenova.emaanwallpapers.data.UserAccountLookup
+import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.AccountDeletionApi
@@ -149,15 +152,19 @@ fun ProfileScreen(navController: NavController) {
 
     suspend fun refreshSubscriptionState() {
         val phone = dataStoreManager.phoneNumber.firstOrNull() ?: return
-        try {
-            val result = SupabaseClient.client
-                .postgrest["users"]
-                .select { filter { eq("phone_number", phone) } }
-                .decodeSingle<UserRow>()
-            subscriptionStatus = result.subscription_status
-            trialEnd = result.trial_end
-        } catch (e: Exception) {
-            Log.e("PROFILE_SUBSCRIPTION_REFRESH", e.message ?: "Unknown")
+        when (val lookup = UserAccountQueries.lookupByPhone<UserRow>(phone)) {
+            UserAccountLookup.Missing -> {
+                LocalSession.clear(context)
+                LocalSession.goToLogin(navController)
+            }
+            is UserAccountLookup.Found -> {
+                val result = lookup.row
+                subscriptionStatus = result.subscription_status
+                trialEnd = result.trial_end
+            }
+            UserAccountLookup.Unreachable -> {
+                Log.e("PROFILE_SUBSCRIPTION_REFRESH", "users lookup unreachable")
+            }
         }
     }
 
@@ -195,18 +202,27 @@ fun ProfileScreen(navController: NavController) {
         try {
             val phone = dataStoreManager.phoneNumber.firstOrNull()
             if (!phone.isNullOrEmpty()) {
-                val result = SupabaseClient.client
-                    .postgrest["users"]
-                    .select { filter { eq("phone_number", phone) } }
-                    .decodeSingle<UserRow>()
-                user = User(
-                    phone_number = result.phone_number,
-                    first_name = result.first_name ?: "",
-                    last_name = result.last_name ?: "",
-                )
-                avatarUrl = result.avatar_url
-                subscriptionStatus = result.subscription_status
-                trialEnd = result.trial_end
+                when (val lookup = UserAccountQueries.lookupByPhone<UserRow>(phone)) {
+                    UserAccountLookup.Missing -> {
+                        LocalSession.clear(context)
+                        LocalSession.goToLogin(navController)
+                        return@LaunchedEffect
+                    }
+                    is UserAccountLookup.Found -> {
+                        val result = lookup.row
+                        user = User(
+                            phone_number = result.phone_number,
+                            first_name = result.first_name ?: "",
+                            last_name = result.last_name ?: "",
+                        )
+                        avatarUrl = result.avatar_url
+                        subscriptionStatus = result.subscription_status
+                        trialEnd = result.trial_end
+                    }
+                    UserAccountLookup.Unreachable -> {
+                        Log.e("PROFILE_ERROR", "users lookup unreachable")
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("PROFILE_ERROR", e.message ?: "Unknown error")

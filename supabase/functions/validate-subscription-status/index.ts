@@ -104,6 +104,30 @@ serve(async (req) => {
         ? new Date(rzData.current_end * 1000).toISOString()
         : null;
 
+    const { data: existingRow } = await supabase
+      .from("users")
+      .select("subscription_status, trial_end")
+      .eq(whereColumn, whereValue)
+      .maybeSingle();
+    const existingStatus =
+      typeof existingRow?.subscription_status === "string"
+        ? existingRow.subscription_status.trim().toLowerCase()
+        : "";
+    const existingTrialEnd =
+      typeof existingRow?.trial_end === "string" ? existingRow.trial_end : "";
+    const existingTrialMs = Date.parse(existingTrialEnd);
+    const hasFutureTrial =
+      existingTrialEnd !== "" &&
+      !Number.isNaN(existingTrialMs) &&
+      existingTrialMs > Date.now();
+    // Webhook/activate-trial may already have granted trial while Razorpay GET still
+    // lags on created/authenticated. Never downgrade live premium from that lag.
+    const protectPremium =
+      existingStatus === "active" ||
+      (existingStatus === "trial" && hasFutureTrial) ||
+      ((existingStatus === "cancel_requested" || existingStatus === "cancelled") &&
+        hasFutureTrial);
+
     let patch: Record<string, unknown> = {};
     if (rzStatus === "active") {
       patch = { is_subscribed: true, subscription_status: "active" };
@@ -113,9 +137,13 @@ serve(async (req) => {
     } else if (rzStatus === "halted" || rzStatus === "completed" || rzStatus === "expired") {
       patch = { is_subscribed: false, subscription_status: "expired" };
     } else if (rzStatus === "authenticated") {
-      patch = { subscription_status: "authenticated", is_subscribed: false };
+      if (!protectPremium) {
+        patch = { subscription_status: "authenticated", is_subscribed: false };
+      }
     } else if (rzStatus === "created") {
-      patch = { subscription_status: "created", is_subscribed: false };
+      if (!protectPremium) {
+        patch = { subscription_status: "created", is_subscribed: false };
+      }
     }
 
     if (Object.keys(patch).length > 0) {
