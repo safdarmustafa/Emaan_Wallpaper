@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -34,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -77,12 +79,51 @@ import com.squarenova.emaanwallpapers.network.isLiveWallpaper
 import com.squarenova.emaanwallpapers.network.isStaticWallpaper
 import com.squarenova.emaanwallpapers.network.matchesCategory
 import com.squarenova.emaanwallpapers.service.GifWallpaperService
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+
+// ─────────────────────────────────────────
+// WhatsApp Share
+// ─────────────────────────────────────────
+
+suspend fun shareWallpaperToWhatsApp(context: Context, url: String): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            val fileName = "wallpaper_${System.currentTimeMillis()}.jpg"
+            val shareDir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+            val file = java.io.File(shareDir, fileName)
+
+            java.net.URL(url).openStream().use { input ->
+                java.io.FileOutputStream(file).use { output -> input.copyTo(output) }
+            }
+
+            val uri: Uri = FileProvider.getUriForFile(
+                context,
+                "${com.squarenova.emaanwallpapers.BuildConfig.APPLICATION_ID}.file_provider",
+                file
+            )
+
+            withContext(Dispatchers.Main) {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    setPackage("com.whatsapp")
+                }
+                context.startActivity(intent)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("WA_WALLPAPER_SHARE", e.message ?: "Unknown", e)
+            false
+        }
+    }
+}
 
 // ─────────────────────────────────────────
 // Models
@@ -190,6 +231,9 @@ fun HomeScreen(navController: NavController) {
     var activeFilter by remember { mutableStateOf(WallpaperFilter.ALL) }
     var showFilterSheet by remember { mutableStateOf(false) }
 
+    // Increments on every category tap (even same category) → forces reshuffle
+    var shuffleTrigger by remember { mutableIntStateOf(0) }
+
     // null = no category selected (show all)
     val categories = listOf(
         "kaaba",
@@ -296,12 +340,12 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
-    val filteredStatic = remember(selectedCategory, allWallpapers) {
-        allWallpapers.filter { it.isStaticWallpaper() && it.matchesCategory(selectedCategory) }
+    val filteredStatic = remember(selectedCategory, allWallpapers, shuffleTrigger) {
+        allWallpapers.filter { it.isStaticWallpaper() && it.matchesCategory(selectedCategory) }.shuffled()
     }
 
-    val filteredLive = remember(selectedCategory, allWallpapers) {
-        allWallpapers.filter { it.isLiveWallpaper() && it.matchesCategory(selectedCategory) }
+    val filteredLive = remember(selectedCategory, allWallpapers, shuffleTrigger) {
+        allWallpapers.filter { it.isLiveWallpaper() && it.matchesCategory(selectedCategory) }.shuffled()
     }
 
     // Preserve prior ALL ordering: live first, then static.
@@ -588,6 +632,7 @@ fun HomeScreen(navController: NavController) {
                             onClick = {
                                 selectedCategory =
                                     if (selectedCategory == category) null else category
+                                shuffleTrigger++
                             },
                             label = {
                                 Text(
@@ -712,6 +757,15 @@ fun HomeScreen(navController: NavController) {
                                             snackbarMessage = if (result.isSuccess)
                                                 "Wallpaper set successfully ✅"
                                             else "Failed to set wallpaper ❌"
+                                        }
+                                    },
+                                    onShareWhatsApp = {
+                                        scope.launch {
+                                            val ok = shareWallpaperToWhatsApp(context, item.wallpaper.url)
+                                            if (!ok) {
+                                                snackbarIsSuccess = false
+                                                snackbarMessage = "WhatsApp not installed ❌"
+                                            }
                                         }
                                     },
                                     modifier = Modifier
@@ -942,6 +996,7 @@ fun WallpaperCard(
     url: String,
     isSettingWallpaper: Boolean,
     onSetWallpaper: () -> Unit,
+    onShareWhatsApp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -981,49 +1036,83 @@ fun WallpaperCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(90.dp)
+                    .height(110.dp)
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
                         )
                     )
             )
 
-            Button(
-                onClick = onSetWallpaper,
-                enabled = !isSettingWallpaper,
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp)
-                    .height(42.dp),
-                shape = RoundedCornerShape(50.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandGreen,
-                    disabledContainerColor = BrandGreen.copy(alpha = 0.65f)
-                ),
-                contentPadding = PaddingValues(horizontal = 24.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isSettingWallpaper) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
+                // WhatsApp share button
+                Button(
+                    onClick = onShareWhatsApp,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreen),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.squarenova.emaanwallpapers.R.drawable.ic_whatsapp),
+                        contentDescription = "Share on WhatsApp",
+                        tint = Color.White,
+                        modifier = Modifier.size(17.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        "Setting...",
+                        "Share",
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )
-                } else {
-                    Text(
-                        "Set wallpaper",
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
+                }
+
+                // Set Wallpaper button
+                Button(
+                    onClick = onSetWallpaper,
+                    enabled = !isSettingWallpaper,
+                    modifier = Modifier
+                        .weight(1.6f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(50.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BrandGreen,
+                        disabledContainerColor = BrandGreen.copy(alpha = 0.65f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    if (isSettingWallpaper) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Setting...",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    } else {
+                        Text(
+                            "Set wallpaper",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
         }

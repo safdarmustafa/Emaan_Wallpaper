@@ -19,19 +19,31 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -54,6 +66,7 @@ import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -162,7 +175,32 @@ fun ReelsScreen(navController: NavController) {
     var reels by remember { mutableStateOf<List<ReelRow>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
-    var isSharingToWhatsApp by remember { mutableStateOf(false) }
+
+    // Category filter
+    val categories = listOf(
+        "ramadan", "dua", "quran", "prayer",
+        "makkah", "madinah", "mosque",
+        "islamic_night", "peaceful", "architecture"
+    )
+    val categoryLabels = mapOf(
+        "ramadan" to "Ramadan",
+        "dua" to "Dua",
+        "quran" to "Quran",
+        "prayer" to "Prayer",
+        "makkah" to "Makkah",
+        "madinah" to "Madinah",
+        "mosque" to "Mosque",
+        "islamic_night" to "Islamic Night",
+        "peaceful" to "Peaceful",
+        "architecture" to "Architecture"
+    )
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var shuffleTrigger by remember { mutableIntStateOf(0) }
+
+    val filteredReels = remember(selectedCategory, reels, shuffleTrigger) {
+        if (selectedCategory == null) reels
+        else reels.filter { it.category == selectedCategory }.shuffled()
+    }
 
     LaunchedEffect(toastMessage) {
         if (toastMessage != null) {
@@ -199,7 +237,8 @@ fun ReelsScreen(navController: NavController) {
                 .select(columns = Columns.ALL) {
                     order("created_at", Order.DESCENDING)
                 }
-                .decodeList()
+                .decodeList<ReelRow>()
+                .shuffled()
 
             Log.d("REELS_DEBUG", "Fetched reels count: ${reels.size}")
 
@@ -272,58 +311,124 @@ fun ReelsScreen(navController: NavController) {
             }
 
             else -> {
-                val pagerState = rememberPagerState(pageCount = { reels.size })
+                val pagerState = rememberPagerState(pageCount = { filteredReels.size })
+
+                // Reset to page 0 when category changes
+                LaunchedEffect(selectedCategory, shuffleTrigger) {
+                    if (filteredReels.isNotEmpty()) pagerState.scrollToPage(0)
+                }
 
                 VerticalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
                     ReelItem(
-                        reel = reels[page],
+                        reel = filteredReels[page],
                         isVisible = pagerState.currentPage == page,
                         onDownload = {
-                            downloadVideo(context, reels[page].url, reels[page].title)
+                            downloadVideo(context, filteredReels[page].url, filteredReels[page].title)
                             toastMessage = "Downloading... check notifications 📥"
                         },
                         onShare = {
-                            shareVideo(context, reels[page].url, reels[page].title)
+                            shareVideo(context, filteredReels[page].url, filteredReels[page].title)
                         },
                         onWhatsApp = {
-                            if (isSharingToWhatsApp) return@ReelItem
-                            isSharingToWhatsApp = true
                             scope.launch {
-                                val success = shareVideoToWhatsApp(
-                                    context, reels[page].url, reels[page].title
+                                shareVideoToWhatsApp(
+                                    context, filteredReels[page].url, filteredReels[page].title
                                 )
-                                isSharingToWhatsApp = false
-                                toastMessage = if (success) "Opening WhatsApp... 📱" else "Sharing link instead"
                             }
                         }
                     )
                 }
-            }
-        }
 
-        // WhatsApp sharing overlay
-        if (isSharingToWhatsApp) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.6f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(
-                        color = Color(0xFFD4AF37),
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(56.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "Preparing video for WhatsApp...",
-                        color = Color.White,
-                        fontSize = 14.sp
-                    )
+                // Category chips overlay — top of screen
+                LazyRow(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 12.dp)
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) {
+                    // "All" chip
+                    item {
+                        val isSelected = selectedCategory == null
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50.dp))
+                                .background(
+                                    if (isSelected) Color(0xFFD4AF37)
+                                    else Color.Black.copy(alpha = 0.55f)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) Color.Transparent else Color.White.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(50.dp)
+                                )
+                                .smoothClickable {
+                                    selectedCategory = null
+                                    shuffleTrigger++
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                "All",
+                                color = if (isSelected) Color.Black else Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+
+                    items(categories) { cat ->
+                        val isSelected = selectedCategory == cat
+                        val hasReels = reels.any { it.category == cat }
+                        if (!hasReels) return@items
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50.dp))
+                                .background(
+                                    if (isSelected) Color(0xFFD4AF37)
+                                    else Color.Black.copy(alpha = 0.55f)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) Color.Transparent else Color.White.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(50.dp)
+                                )
+                                .smoothClickable {
+                                    selectedCategory = if (selectedCategory == cat) null else cat
+                                    shuffleTrigger++
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                categoryLabels[cat] ?: cat,
+                                color = if (isSelected) Color.Black else Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+
+                // Empty state when category has no reels
+                if (filteredReels.isEmpty()) {
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("🎬", fontSize = 56.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "No reels in this category",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
@@ -354,6 +459,8 @@ fun ReelsScreen(navController: NavController) {
     }
 }
 
+enum class DownloadState { IDLE, DOWNLOADING, DONE }
+
 @OptIn(UnstableApi::class)
 @Composable
 fun ReelItem(
@@ -365,9 +472,12 @@ fun ReelItem(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
     val currentIsVisible by rememberUpdatedState(isVisible)
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(false) }
+    var downloadState by remember { mutableStateOf(DownloadState.IDLE) }
+    var whatsAppState by remember { mutableStateOf(DownloadState.IDLE) }
 
     // ✅ Create player WITHOUT calling prepare() here
     val exoPlayer = remember(reel.url) {
@@ -423,7 +533,7 @@ fun ReelItem(
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
 
-        // ✅ PlayerView — prepare() called inside factory after surface is ready
+        // ✅ Full screen video — no black gaps
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -433,164 +543,252 @@ fun ReelItem(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    // ✅ Attach player THEN prepare — this fixes black screen
                     player = exoPlayer
                     exoPlayer.prepare()
                 }
             },
-            update = { view ->
-                view.player = exoPlayer
-            },
+            update = { view -> view.player = exoPlayer },
             modifier = Modifier
                 .fillMaxSize()
                 .smoothClickable {
-                        isPlaying = !isPlaying
-                        if (isPlaying) exoPlayer.play() else exoPlayer.pause()
-                    }
+                    isPlaying = !isPlaying
+                    if (isPlaying) exoPlayer.play() else exoPlayer.pause()
+                }
         )
 
-        // Top gradient
+        // Top gradient scrim — behind chips
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(100.dp)
+                .height(130.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)
+                        colors = listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
                     )
                 )
         )
 
-        // Bottom gradient
+        // Bottom gradient scrim — behind buttons + title
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(180.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))
                     )
                 )
         )
 
-        // Top bar — category + mute
-        Row(
+        // Mute button — top right
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .align(Alignment.TopCenter),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(end = 16.dp, top = 56.dp) // below chips row
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.5f))
+                .smoothClickable {
+                    isMuted = !isMuted
+                    exoPlayer.volume = if (isMuted) 0f else 1f
+                },
+            contentAlignment = Alignment.Center
         ) {
-            if (!reel.category.isNullOrEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    Color(0xFFD4AF37),
-                                    Color(0xFFB8860B)
-                                )
-                            )
-                        )
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        reel.category,
-                        color = Color.Black,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            } else {
-                Spacer(modifier = Modifier.width(1.dp))
-            }
-
-            // Mute toggle
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .smoothClickable {
-                        isMuted = !isMuted
-                        exoPlayer.volume = if (isMuted) 0f else 1f
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(if (isMuted) "🔇" else "🔊", fontSize = 16.sp)
-            }
+            Icon(
+                imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                contentDescription = if (isMuted) "Unmute" else "Mute",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
         }
 
-        // Pause indicator
+        // Pause indicator — center
         if (!isPlaying) {
             Box(
                 modifier = Modifier
                     .size(72.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(Color.Black.copy(alpha = 0.45f))
                     .align(Alignment.Center),
                 contentAlignment = Alignment.Center
             ) {
-                Text("⏸", fontSize = 32.sp)
-            }
-        }
-
-        // Right side action buttons
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            ActionButton(
-                emoji = "💬",
-                label = "WhatsApp",
-                onClick = onWhatsApp,
-                accentColor = Color(0xFF25D366)
-            )
-            ActionButton(emoji = "↗️", label = "Share", onClick = onShare)
-            ActionButton(
-                emoji = "⬇️",
-                label = "Download",
-                onClick = onDownload,
-                accentColor = Color(0xFFD4AF37)
-            )
-        }
-
-        // Bottom info
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 20.dp, end = 90.dp, bottom = 28.dp)
-                .navigationBarsPadding()
-        ) {
-            if (!reel.title.isNullOrEmpty()) {
-                Text(
-                    reel.title,
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Paused",
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
                 )
-                Spacer(modifier = Modifier.height(6.dp))
             }
+        }
+
+        // Title — above bottom buttons
+        if (!reel.title.isNullOrEmpty()) {
             Text(
-                "Swipe up for more ↑",
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 13.sp
+                reel.title,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, bottom = 74.dp, end = 16.dp)
             )
+        }
+
+        // Bottom action buttons row — like reference app
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // WhatsApp
+            Button(
+                onClick = {
+                    if (whatsAppState == DownloadState.IDLE) {
+                        whatsAppState = DownloadState.DOWNLOADING
+                        scope.launch {
+                            onWhatsApp()
+                            whatsAppState = DownloadState.DONE
+                            delay(2500)
+                            whatsAppState = DownloadState.IDLE
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = when (whatsAppState) {
+                        DownloadState.DONE -> Color(0xFF128C7E)
+                        else -> Color(0xFF25D366)
+                    }
+                ),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                when (whatsAppState) {
+                    DownloadState.DOWNLOADING -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Opening...", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    DownloadState.DONE -> {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Shared",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Sharing...", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    DownloadState.IDLE -> {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_whatsapp),
+                            contentDescription = "WhatsApp",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("WhatsApp", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            // Share
+            Button(
+                onClick = onShare,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Share,
+                    contentDescription = "Share",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Share", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            // Download
+            Button(
+                onClick = {
+                    if (downloadState == DownloadState.IDLE) {
+                        downloadState = DownloadState.DOWNLOADING
+                        onDownload()
+                        scope.launch {
+                            delay(1200)
+                            downloadState = DownloadState.DONE
+                            delay(2500)
+                            downloadState = DownloadState.IDLE
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = when (downloadState) {
+                        DownloadState.DONE -> Color(0xFF065F46)
+                        else -> Color.White.copy(alpha = 0.15f)
+                    }
+                ),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                when (downloadState) {
+                    DownloadState.DOWNLOADING -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Saving...", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    DownloadState.DONE -> {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Downloaded",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Saved!", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    DownloadState.IDLE -> {
+                        Icon(
+                            imageVector = Icons.Filled.FileDownload,
+                            contentDescription = "Download",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Download", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
         }
     }
 }
 
+sealed class ActionIcon {
+    data class Vector(val imageVector: ImageVector) : ActionIcon()
+    data class Drawable(@androidx.annotation.DrawableRes val resId: Int) : ActionIcon()
+}
+
 @Composable
 fun ActionButton(
-    emoji: String,
+    icon: ActionIcon,
     label: String,
     onClick: () -> Unit,
     accentColor: Color? = null
@@ -609,7 +807,20 @@ fun ActionButton(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Text(emoji, fontSize = 24.sp)
+            when (icon) {
+                is ActionIcon.Vector -> Icon(
+                    imageVector = icon.imageVector,
+                    contentDescription = label,
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
+                )
+                is ActionIcon.Drawable -> Icon(
+                    painter = androidx.compose.ui.res.painterResource(id = icon.resId),
+                    contentDescription = label,
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(

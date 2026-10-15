@@ -37,16 +37,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.squarenova.emaanwallpapers.data.model.Ringtone
+import com.squarenova.emaanwallpapers.theme.AppDivider
+import com.squarenova.emaanwallpapers.theme.AppSurface
+import com.squarenova.emaanwallpapers.theme.AppTextPrimary
+import com.squarenova.emaanwallpapers.theme.AppTextSecondary
 import com.squarenova.emaanwallpapers.theme.BrandGreen
 import com.squarenova.emaanwallpapers.ui.ringtone.components.PlayerSlider
 
-private val RowSurface = Color(0xFF141414)
-private val RowSurfaceActive = Color(0xFF182018)
-private val RowBorder = Color(0xFF262626)
+private val RowSurface = AppSurface
+private val RowSurfaceActive = Color(0xFFEEF9F1)
+private val RowBorder = AppDivider
 private val RowBorderActive = BrandGreen.copy(alpha = 0.55f)
-private val TextPrimaryDark = Color(0xFFF2F3F2)
-private val TextSecondaryDark = Color(0xFF9AA39C)
-private val SetButtonFill = Color(0xFF1A1A1A)
+private val TextPrimaryDark = AppTextPrimary
+private val TextSecondaryDark = AppTextSecondary
+private val SetButtonFill = Color(0xFFF0F4F2)
 
 @Composable
 fun RingtoneCard(
@@ -192,12 +196,12 @@ private fun CompactSetButton(onClick: () -> Unit) {
         onClick = onClick,
         shape = RoundedCornerShape(50),
         color = SetButtonFill,
-        border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.65f)),
+        border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.8f)),
     ) {
         Text(
             text = "Set",
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            color = TextPrimaryDark,
+            color = BrandGreen,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
         )

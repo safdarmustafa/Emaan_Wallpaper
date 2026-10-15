@@ -54,7 +54,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squarenova.emaanwallpapers.data.model.Ringtone
+import com.squarenova.emaanwallpapers.theme.AppBackground
+import com.squarenova.emaanwallpapers.theme.AppDivider
+import com.squarenova.emaanwallpapers.theme.AppTextPrimary
+import com.squarenova.emaanwallpapers.theme.AppTextSecondary
 import com.squarenova.emaanwallpapers.theme.BrandGreen
+import com.squarenova.emaanwallpapers.theme.AppSurface
 import com.squarenova.emaanwallpapers.ui.ringtone.components.DownloadSuccessDialog
 import com.squarenova.emaanwallpapers.ui.ringtone.components.RingtoneFailureDialog
 import com.squarenova.emaanwallpapers.ui.ringtone.components.RingtoneProcessingDialog
@@ -65,10 +70,10 @@ import com.squarenova.emaanwallpapers.ui.ringtone.player.AudioPlayerManager
 import com.squarenova.emaanwallpapers.ui.ringtone.setter.RingtoneSetter
 import kotlinx.coroutines.launch
 
-private val ScreenBackground = Color(0xFF0B0B0B)
-private val HeaderTitle = Color(0xFFF4F5F4)
-private val HeaderSubtitle = Color(0xFF8B948D)
-private val SearchSurface = Color(0xFF181818)
+private val ScreenBackground = AppBackground
+private val HeaderTitle = AppTextPrimary
+private val HeaderSubtitle = AppTextSecondary
+private val SearchSurface = AppSurface
 
 @Composable
 fun RingtoneScreen(
@@ -220,7 +225,7 @@ fun RingtoneScreen(
                         focusedContainerColor = SearchSurface,
                         unfocusedContainerColor = SearchSurface,
                         focusedBorderColor = BrandGreen,
-                        unfocusedBorderColor = Color(0xFF2A2A2A),
+                        unfocusedBorderColor = AppDivider,
                         focusedTextColor = HeaderTitle,
                         unfocusedTextColor = HeaderTitle,
                         cursorColor = BrandGreen
@@ -385,12 +390,12 @@ private fun RingtoneHeader(
             onClick = onToggleSearch,
             modifier = Modifier
                 .size(46.dp)
-                .background(SearchSurface, CircleShape)
+                .background(Color(0xFFEEF2F0), CircleShape)
         ) {
             Icon(
                 imageVector = if (searchActive) Icons.Default.Close else Icons.Default.Search,
                 contentDescription = if (searchActive) "Close search" else "Search",
-                tint = HeaderTitle,
+                tint = AppTextPrimary,
                 modifier = Modifier.size(22.dp)
             )
         }
