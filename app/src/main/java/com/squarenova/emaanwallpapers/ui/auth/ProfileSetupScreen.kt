@@ -24,21 +24,13 @@ import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
-import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.ui.profile.UserRow
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-
-@Serializable
-private data class SubscriptionCheckRow(
-    val phone_number: String? = null,
-    val is_subscribed: Boolean? = false,
-    val subscription_status: String? = null,
-    val trial_end: String? = null,
-)
 
 @Serializable
 data class NewUserRow(
@@ -177,25 +169,13 @@ fun ProfileSetupScreen(navController: NavController) {
                             // ✅ Mark profile as completed and go home
                             dataStoreManager.setProfileCompleted()
 
-                            val subRow = try {
-                                SupabaseClient.client
-                                    .postgrest["users"]
-                                    .select { filter { eq("phone_number", phone) } }
-                                    .decodeList<SubscriptionCheckRow>()
-                                    .firstOrNull()
-                            } catch (e: Exception) {
-                                null
-                            }
-                            val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
-                                subscriptionStatus = subRow?.subscription_status,
-                                trialEndIso = subRow?.trial_end,
-                            )
+                            val hasPremium = EntitlementRepository.refresh(phone)
 
                             EntitlementDebugLog.navigation(
                                 source = "ProfileSetupScreen",
                                 destination = if (hasPremium) "home" else "subscription",
-                                subscriptionStatus = subRow?.subscription_status,
-                                trialEnd = subRow?.trial_end,
+                                subscriptionStatus = EntitlementRepository.lastStatus,
+                                trialEnd = EntitlementRepository.subscription.value?.endDate,
                                 hasPremiumAccess = hasPremium,
                             )
 

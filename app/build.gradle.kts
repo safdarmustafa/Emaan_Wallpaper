@@ -47,6 +47,8 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${prop("SUPABASE_ANON_KEY").escapeForBuildConfig()}\"")
         buildConfigField("String", "RAZORPAY_KEY_ID", "\"${prop("RAZORPAY_KEY_ID").escapeForBuildConfig()}\"")
         buildConfigField("String", "MIXPANEL_TOKEN", "\"${prop("MIXPANEL_TOKEN").escapeForBuildConfig()}\"")
+        // Must match the backend CASHFREE_ENV secret (TEST | PRODUCTION).
+        buildConfigField("String", "CASHFREE_ENV", "\"${prop("CASHFREE_ENV").ifBlank { "TEST" }.escapeForBuildConfig()}\"")
     }
 
     signingConfigs {
@@ -99,6 +101,9 @@ dependencies {
     // "com.razorpay", which makes AGP fail manifest processing. 1.6.56 has the 5-arg registerReceiver fix.
     implementation("com.razorpay:checkout:1.6.41")
     implementation("com.razorpay:standard-core:1.6.56")
+
+    // Cashfree Subscription SDK (UPI Autopay mandate via UPI Intent)
+    implementation("com.cashfree.pg:api:2.5.0")
 
     // for setting ringtone
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

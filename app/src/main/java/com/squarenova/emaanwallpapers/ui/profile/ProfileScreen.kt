@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,12 +72,12 @@ import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.data.UserAccountLookup
 import com.squarenova.emaanwallpapers.data.UserAccountQueries
-import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.AccountDeletionApi
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
+import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionRepository
 import com.squarenova.emaanwallpapers.network.OtpApi
-import com.squarenova.emaanwallpapers.network.SubscriptionApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import com.squarenova.emaanwallpapers.ui.legal.LegalUrlOpener
 import com.squarenova.emaanwallpapers.ui.legal.LegalUrls
@@ -136,8 +137,9 @@ fun ProfileScreen(navController: NavController) {
     var isSaving by remember { mutableStateOf(false) }
     var profileMessage by remember { mutableStateOf<ProfileMessage?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    var subscriptionStatus by remember { mutableStateOf<String?>(null) }
-    var trialEnd by remember { mutableStateOf<String?>(null) }
+    val cashfreeSubscription by EntitlementRepository.subscription.collectAsState()
+    val subscriptionStatus = cashfreeSubscription?.status
+    val trialEnd = cashfreeSubscription?.endDate
     var showCancelDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isDeletingAccount by remember { mutableStateOf(false) }
@@ -148,23 +150,14 @@ fun ProfileScreen(navController: NavController) {
     var deleteStatusIsError by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
 
-    val hasPremium = SubscriptionEntitlement.hasPremiumAccess(subscriptionStatus, trialEnd)
+    val hasPremium by EntitlementRepository.premium.collectAsState()
 
+    /** Re-reads Cashfree subscription-status; [cashfreeSubscription] updates from the repository. */
     suspend fun refreshSubscriptionState() {
         val phone = dataStoreManager.phoneNumber.firstOrNull() ?: return
-        when (val lookup = UserAccountQueries.lookupByPhone<UserRow>(phone)) {
-            UserAccountLookup.Missing -> {
-                LocalSession.clear(context)
-                LocalSession.goToLogin(navController)
-            }
-            is UserAccountLookup.Found -> {
-                val result = lookup.row
-                subscriptionStatus = result.subscription_status
-                trialEnd = result.trial_end
-            }
-            UserAccountLookup.Unreachable -> {
-                Log.e("PROFILE_SUBSCRIPTION_REFRESH", "users lookup unreachable")
-            }
+        if (EntitlementRepository.refreshDetailed(phone).accountMissing) {
+            LocalSession.clear(context)
+            LocalSession.goToLogin(navController)
         }
     }
 
@@ -216,8 +209,7 @@ fun ProfileScreen(navController: NavController) {
                             last_name = result.last_name ?: "",
                         )
                         avatarUrl = result.avatar_url
-                        subscriptionStatus = result.subscription_status
-                        trialEnd = result.trial_end
+                        refreshSubscriptionState()
                     }
                     UserAccountLookup.Unreachable -> {
                         Log.e("PROFILE_ERROR", "users lookup unreachable")
@@ -243,7 +235,7 @@ fun ProfileScreen(navController: NavController) {
     val avatarInitial = user?.first_name?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 
     val statusLower = subscriptionStatus?.lowercase()
-    val canCancelSubscription = hasPremium && statusLower != "cancel_requested"
+    val canCancelSubscription = hasPremium && statusLower != "cancelled"
 
     fun showComingSoon(feature: String) {
         profileMessage = ProfileMessage("$feature coming soon", isSuccess = true)
@@ -298,7 +290,7 @@ fun ProfileScreen(navController: NavController) {
     if (showCancelDialog) {
         CancelSubscriptionDialog(
             isCancelling = isCancelling,
-            isTrial = subscriptionStatus?.equals("trial", ignoreCase = true) == true,
+            isTrial = false,
             onDismiss = { showCancelDialog = false },
             onConfirm = {
                 scope.launch {
@@ -309,44 +301,20 @@ fun ProfileScreen(navController: NavController) {
                             profileMessage = ProfileMessage("Cancel failed", isSuccess = false)
                             return@launch
                         }
-                        val row = try {
-                            SupabaseClient.client
-                                .postgrest["users"]
-                                .select { filter { eq("phone_number", userPhone) } }
-                                .decodeSingle<UserRow>()
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (row == null) {
-                            profileMessage = ProfileMessage("Cancel failed", isSuccess = false)
-                            return@launch
-                        }
-                        if (row.subscription_status?.equals("cancel_requested", ignoreCase = true) == true) {
-                            profileMessage = ProfileMessage(
-                                "Already cancelled. No further charges will be made.",
-                                isSuccess = true,
-                            )
-                            showCancelDialog = false
-                            return@launch
-                        }
-                        val isTrialCancel =
-                            row.subscription_status?.equals("trial", ignoreCase = true) == true
-                        val subId = row.razorpay_subscription_id
-                        if (subId.isNullOrBlank()) {
-                            profileMessage = ProfileMessage("No subscription on file", isSuccess = false)
-                            return@launch
-                        }
-                        // Single cancellation path: trial AND paid both go through the edge function
-                        // (Razorpay + DB). The client never writes subscription_status directly.
-                        val result = SubscriptionApi.cancelSubscription(subId)
+                        // Cancels at Cashfree via the Edge Function; the webhook updates the DB.
+                        // Premium stays until end_date.
+                        val result = CashfreeSubscriptionRepository.cancelSubscription(userPhone)
                         if (result.isSuccess) {
-                            AnalyticsManager.trackOnce(
-                                key = "subscription_cancelled:$subId",
-                                eventName = AnalyticsEvents.SUBSCRIPTION_CANCELLED,
-                            )
+                            val cancel = result.getOrThrow()
+                            if (!cancel.alreadyCancelled && !cancel.alreadyCancelling) {
+                                AnalyticsManager.trackOnce(
+                                    key = "subscription_cancelled:cashfree:$userPhone",
+                                    eventName = AnalyticsEvents.SUBSCRIPTION_CANCELLED,
+                                )
+                            }
                             profileMessage = ProfileMessage(
-                                if (isTrialCancel) {
-                                    "Trial cancelled. You will not be charged ₹249"
+                                if (cancel.alreadyCancelled || cancel.alreadyCancelling) {
+                                    "Already cancelled. No further charges will be made."
                                 } else {
                                     "Cancellation requested"
                                 },
@@ -648,7 +616,7 @@ fun ProfileScreen(navController: NavController) {
                     ),
                     ProfileAccountItem(
                         title = "Subscription Disclosure",
-                        subtitle = "1-day free trial, ₹249/month auto-renewal, refunds",
+                        subtitle = "1-day free trial, ₹499/month auto-renewal, refunds",
                         icon = Icons.Default.WorkspacePremium,
                         opensExternal = true,
                         onClick = {

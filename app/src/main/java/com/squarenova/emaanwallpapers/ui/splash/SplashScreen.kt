@@ -1,6 +1,5 @@
 package com.squarenova.emaanwallpapers.ui.splash
 
-import android.content.Context
 import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -32,27 +31,19 @@ import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
 import com.squarenova.emaanwallpapers.data.LocalSession
-import com.squarenova.emaanwallpapers.data.MandateDebugLog
-import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.UserAccountLookup
 import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
-import com.squarenova.emaanwallpapers.network.SubscriptionApi
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.Serializable
 
-private val MANDATE_PENDING_STATUSES = setOf("created", "authenticated", "pending")
-
 @Serializable
 private data class SubscriptionUserRow(
     val phone_number: String? = null,
-    val is_subscribed: Boolean? = false,
-    val razorpay_subscription_id: String? = null,
-    val subscription_status: String? = null,
-    val trial_end: String? = null,
 )
 
 @Composable
@@ -106,7 +97,7 @@ fun SplashScreen(navController: NavController) {
                 false
             }
 
-            when (val account = UserAccountQueries.lookupByPhone<SubscriptionUserRow>(phone)) {
+            when (UserAccountQueries.lookupByPhone<SubscriptionUserRow>(phone)) {
                 UserAccountLookup.Missing -> {
                     LocalSession.clear(context)
                     navController.navigate("login") {
@@ -115,23 +106,11 @@ fun SplashScreen(navController: NavController) {
                     return@LaunchedEffect
                 }
 
-                UserAccountLookup.Unreachable -> {
-                    routeLoggedInUser(
-                        navController = navController,
-                        context = context,
-                        phone = phone,
-                        row = null,
-                        cachedSubscribed = cachedSubscribed,
-                        dataStoreManager = dataStoreManager,
-                    )
-                }
-
+                UserAccountLookup.Unreachable,
                 is UserAccountLookup.Found -> {
                     routeLoggedInUser(
                         navController = navController,
-                        context = context,
                         phone = phone,
-                        row = account.row,
                         cachedSubscribed = cachedSubscribed,
                         dataStoreManager = dataStoreManager,
                     )
@@ -194,115 +173,49 @@ fun SplashScreen(navController: NavController) {
 
 private suspend fun routeLoggedInUser(
     navController: NavController,
-    context: Context,
     phone: String,
-    row: SubscriptionUserRow?,
     cachedSubscribed: Boolean,
     dataStoreManager: DataStoreManager,
 ) {
-    val syncedSubscribed = UserSubscriptionSyncManager(dataStoreManager).syncUserSubscription(phone)
+    // Cashfree subscription-status (via EntitlementRepository) is the only premium source;
+    // offline it falls back to the cached value.
+    val hasPremium = UserSubscriptionSyncManager(dataStoreManager).syncUserSubscription(phone)
+    val status = EntitlementRepository.lastStatus
     if (BuildConfig.DEBUG) {
         Log.d(
             "SplashScreen",
-            "App-start subscription sync: subscribed=$syncedSubscribed cached=$cachedSubscribed",
+            "App-start subscription sync: subscribed=$hasPremium cached=$cachedSubscribed status=$status",
         )
     }
 
-    val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
-        subscriptionStatus = row?.subscription_status,
-        trialEndIso = row?.trial_end,
-    ) || syncedSubscribed
+    if (hasPremium) {
+        EntitlementDebugLog.navigation(
+            source = "SplashScreen",
+            destination = "home",
+            subscriptionStatus = status,
+            trialEnd = EntitlementRepository.subscription.value?.endDate,
+            hasPremiumAccess = true,
+        )
+        navController.navigate("home") {
+            popUpTo("splash") { inclusive = true }
+        }
+        return
+    }
 
-    MandateDebugLog.entitlementCheck(
-        source = "SplashScreen:routing",
-        subscriptionStatus = row?.subscription_status,
-        trialPaid = null,
-        trialEnd = row?.trial_end,
-        hasPremiumAccess = hasPremium,
+    if (status?.lowercase() == "expired") {
+        AnalyticsManager.trackOnce(
+            key = "trial_expired",
+            eventName = AnalyticsEvents.TRIAL_EXPIRED,
+        )
+    }
+    EntitlementDebugLog.navigation(
+        source = "SplashScreen:default",
+        destination = "subscription",
+        subscriptionStatus = status,
+        trialEnd = EntitlementRepository.subscription.value?.endDate,
+        hasPremiumAccess = false,
     )
-    MandateDebugLog.note("SplashScreen syncedSubscribed=$syncedSubscribed")
-
-    when {
-        hasPremium -> {
-            EntitlementDebugLog.navigation(
-                source = "SplashScreen",
-                destination = "home",
-                subscriptionStatus = row?.subscription_status,
-                trialEnd = row?.trial_end,
-                hasPremiumAccess = true,
-            )
-            navController.navigate("home") {
-                popUpTo("splash") { inclusive = true }
-            }
-        }
-
-        !row?.razorpay_subscription_id.isNullOrBlank() &&
-            row?.subscription_status?.trim()?.lowercase() in MANDATE_PENDING_STATUSES -> {
-            val refreshOk = SubscriptionApi.refreshSubscriptionStatus(phone).isSuccess
-            val refreshed = if (refreshOk) {
-                when (val again = UserAccountQueries.lookupByPhone<SubscriptionUserRow>(phone)) {
-                    UserAccountLookup.Missing -> null
-                    UserAccountLookup.Unreachable -> row
-                    is UserAccountLookup.Found -> again.row
-                }
-            } else {
-                row
-            }
-            if (SubscriptionEntitlement.hasPremiumAccess(
-                    refreshed?.subscription_status,
-                    refreshed?.trial_end,
-                )
-            ) {
-                EntitlementDebugLog.navigation(
-                    source = "SplashScreen:mandate_refresh",
-                    destination = "home",
-                    subscriptionStatus = refreshed?.subscription_status,
-                    trialEnd = refreshed?.trial_end,
-                    hasPremiumAccess = true,
-                )
-                navController.navigate("home") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            } else if (refreshOk && refreshed == null) {
-                LocalSession.clear(context)
-                navController.navigate("login") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            } else {
-                val reason = when (refreshed?.subscription_status?.lowercase()) {
-                    "expired" -> "expired"
-                    else -> "not_subscribed"
-                }
-                if (reason == "expired") {
-                    AnalyticsManager.trackOnce(
-                        key = "trial_expired",
-                        eventName = AnalyticsEvents.TRIAL_EXPIRED,
-                    )
-                }
-                EntitlementDebugLog.navigation(
-                    source = "SplashScreen:mandate_refresh",
-                    destination = "subscription",
-                    subscriptionStatus = refreshed?.subscription_status,
-                    trialEnd = refreshed?.trial_end,
-                    hasPremiumAccess = false,
-                )
-                navController.navigate("subscription") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            }
-        }
-
-        else -> {
-            EntitlementDebugLog.navigation(
-                source = "SplashScreen:default",
-                destination = "subscription",
-                subscriptionStatus = row?.subscription_status,
-                trialEnd = row?.trial_end,
-                hasPremiumAccess = false,
-            )
-            navController.navigate("subscription") {
-                popUpTo("splash") { inclusive = true }
-            }
-        }
+    navController.navigate("subscription") {
+        popUpTo("splash") { inclusive = true }
     }
 }

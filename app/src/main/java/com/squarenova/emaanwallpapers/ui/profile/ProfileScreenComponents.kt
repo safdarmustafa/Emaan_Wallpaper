@@ -110,7 +110,7 @@ internal fun resolveProfilePlanVisual(
     return when {
         status == "active" -> ProfilePlanVisual.Premium
         status == "trial" && trialActive -> ProfilePlanVisual.Trial
-        status == "cancel_requested" && trialActive -> ProfilePlanVisual.EndingSoon
+        (status == "cancel_requested" || status == "cancelled") && trialActive -> ProfilePlanVisual.EndingSoon
         status == "expired" || (status == "trial" && !trialActive) -> ProfilePlanVisual.Expired
         SubscriptionEntitlement.hasPremiumAccess(status, trialEndIso) -> ProfilePlanVisual.Premium
         else -> ProfilePlanVisual.Free
@@ -483,13 +483,13 @@ fun ProfileSubscriptionCard(
                 isActivePremium -> {
                     ProfileSubscriptionDetailRow(
                         label = "Next Renewal",
-                        value = trialEndFormatted ?: "Monthly · ₹249",
+                        value = trialEndFormatted ?: "Monthly · ₹499",
                         icon = Icons.Default.CalendarToday,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ProfileSubscriptionDetailRow(
                         label = "Plan",
-                        value = "₹249 / month",
+                        value = "₹499 / month",
                         icon = Icons.Default.WorkspacePremium,
                     )
                     Spacer(modifier = Modifier.height(10.dp))

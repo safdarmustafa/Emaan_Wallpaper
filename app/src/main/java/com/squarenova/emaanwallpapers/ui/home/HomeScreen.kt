@@ -69,7 +69,6 @@ import com.squarenova.emaanwallpapers.theme.HomeSurfaceStrip
 import com.squarenova.emaanwallpapers.ui.components.CompactTopBar
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.LocalSession
-import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
 import com.squarenova.emaanwallpapers.data.UserAccountLookup
 import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
@@ -251,55 +250,12 @@ fun HomeScreen(navController: NavController) {
     /** Catalog stays hidden until premium is confirmed — no unpaid wallpaper flash. */
     var catalogAllowed by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isLoading, user?.subscription_status, user?.trial_end, user?.phone_number) {
-        if (isLoading || redirectedToSubscription) return@LaunchedEffect
+    LaunchedEffect(isLoading, user?.phone_number) {
+        if (isLoading || redirectedToSubscription || catalogAllowed) return@LaunchedEffect
 
-        if (SubscriptionEntitlement.hasPremiumAccess(
-                user?.subscription_status,
-                user?.trial_end,
-                user?.is_subscribed,
-            )
-        ) {
-            catalogAllowed = true
-            return@LaunchedEffect
-        }
-
-        delay(300)
-        if (redirectedToSubscription) return@LaunchedEffect
-
+        // Cashfree subscription-status is the only premium source. refreshDetailed() returns the
+        // cached premium value on an offline read, so a paid user is never paywalled by a failed fetch.
         val phone = dataStoreManager.phoneNumber.firstOrNull()
-        if (!phone.isNullOrEmpty()) {
-            when (val lookup = UserAccountQueries.lookupByPhone<UserRow>(phone)) {
-                UserAccountLookup.Missing -> {
-                    LocalSession.clear(context)
-                    LocalSession.goToLogin(navController)
-                    return@LaunchedEffect
-                }
-                is UserAccountLookup.Found -> {
-                    val refreshed = lookup.row
-                    user = refreshed
-                    avatarUrl = refreshed.avatar_url
-                    cachedFirstName = refreshed.first_name
-                    if (SubscriptionEntitlement.hasPremiumAccess(
-                            refreshed.subscription_status,
-                            refreshed.trial_end,
-                            refreshed.is_subscribed,
-                        )
-                    ) {
-                        catalogAllowed = true
-                        return@LaunchedEffect
-                    }
-                }
-                UserAccountLookup.Unreachable -> {
-                    Log.e("HOME_ACCESS_REFRESH", "users lookup unreachable")
-                }
-            }
-        }
-
-        // Authoritative, offline-safe entitlement gate. EntitlementRepository.refresh():
-        //  • returns the cached premium value on an inconclusive/offline read (never downgrades), and
-        //  • self-heals an authenticated→trial lag (calls activate-trial),
-        // so a paid user is NEVER wrongly paywalled by a failed server fetch or a transient status.
         if (!phone.isNullOrEmpty()) {
             val refresh = EntitlementRepository.refreshDetailed(phone)
             if (refresh.accountMissing) {
@@ -313,26 +269,15 @@ fun HomeScreen(navController: NavController) {
             }
         }
 
-        if (!redirectedToSubscription && !SubscriptionEntitlement.hasPremiumAccess(
-                user?.subscription_status,
-                user?.trial_end,
-                user?.is_subscribed,
-            )
-        ) {
-            val reason = when (user?.subscription_status?.lowercase()) {
-                "expired" -> "expired"
-                else -> "not_subscribed"
-            }
-            if (reason == "expired") {
+        if (!redirectedToSubscription) {
+            val status = EntitlementRepository.lastStatus?.lowercase()
+            if (status == "expired") {
                 AnalyticsManager.trackOnce(
                     key = "trial_expired",
                     eventName = AnalyticsEvents.TRIAL_EXPIRED,
                 )
             }
-            Log.d(
-                "HOME_ACCESS_GUARD",
-                "Redirecting: status=${user?.subscription_status} trialEnd=${user?.trial_end}"
-            )
+            Log.d("HOME_ACCESS_GUARD", "Redirecting: cashfreeStatus=$status")
             redirectedToSubscription = true
             navController.navigate("subscription") {
                 popUpTo("home") { inclusive = true }
@@ -398,14 +343,6 @@ fun HomeScreen(navController: NavController) {
                         user = result
                         avatarUrl = result.avatar_url
                         cachedFirstName = result.first_name
-                        if (SubscriptionEntitlement.hasPremiumAccess(
-                                result.subscription_status,
-                                result.trial_end,
-                                result.is_subscribed,
-                            )
-                        ) {
-                            catalogAllowed = true
-                        }
                     }
                     UserAccountLookup.Unreachable -> {
                         Log.e("HOME_USER_ERROR", "users lookup unreachable")
@@ -437,12 +374,7 @@ fun HomeScreen(navController: NavController) {
                                     user = result
                                     avatarUrl = result.avatar_url
                                     cachedFirstName = result.first_name
-                                    if (SubscriptionEntitlement.hasPremiumAccess(
-                                            result.subscription_status,
-                                            result.trial_end,
-                                            result.is_subscribed,
-                                        )
-                                    ) {
+                                    if (EntitlementRepository.premium.value) {
                                         catalogAllowed = true
                                     }
                                 }
@@ -575,11 +507,8 @@ fun HomeScreen(navController: NavController) {
 
         Column(modifier = Modifier.fillMaxSize().background(homeBg)) {
 
-            val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
-                user?.subscription_status,
-                user?.trial_end,
-                user?.is_subscribed,
-            )
+            val hasPremium by EntitlementRepository.premium.collectAsState()
+            val cashfreeSubscription by EntitlementRepository.subscription.collectAsState()
 
             CompactTopBar(
                 greeting = "Assalamu Alaikum 🌙",
@@ -588,8 +517,8 @@ fun HomeScreen(navController: NavController) {
                 avatarUrl = avatarUrl,
                 avatarInitial = avatarInitial,
                 isSubscribed = hasPremium,
-                subscriptionStatus = user?.subscription_status,
-                trialEndIso = user?.trial_end,
+                subscriptionStatus = cashfreeSubscription?.status,
+                trialEndIso = cashfreeSubscription?.endDate,
                 onProfileClick = { navController.navigate("profile") }
             )
 

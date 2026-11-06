@@ -4,6 +4,8 @@ SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
 RAZORPAY_KEY_ID=rzp_test_OR_live_key_id
 MIXPANEL_TOKEN=your_mixpanel_project_token_optional
+# TEST (sandbox) or PRODUCTION — must match the Supabase CASHFREE_ENV secret.
+CASHFREE_ENV=TEST
 
 # Fast2SMS is server-side only — set via Supabase secrets:
 # supabase secrets set FAST2SMS_API_KEY=...

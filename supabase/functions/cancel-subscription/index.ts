@@ -1,187 +1,189 @@
-import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/**
+ * cancel-subscription
+ *
+ * Submits a Cashfree CANCEL (Manage Subscription) for the user's latest
+ * ACTIVE subscription. Does NOT write subscription state — the webhook is
+ * the only writer. Android refreshes via subscription-status afterward.
+ *
+ * Idempotent: no ACTIVE subscription → success with alreadyCancelled.
+ * Also treats Cashfree "already cancelled / cancelling" errors as success
+ * (alreadyCancelling) so retries during the webhook delay window are safe.
+ */
 
-const jsonHeaders = { "Content-Type": "application/json" };
+import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
-serve(async (req) => {
+import {
+  cancelCashfreeSubscription,
+  isNonActionableCancelError,
+} from "../_shared/cashfree.ts";
+import { handleCorsPreflight } from "../_shared/cors.ts";
+import { requireEnv } from "../_shared/env.ts";
+import { ERROR_CODES } from "../_shared/errors.ts";
+import { errorResponse, successResponse } from "../_shared/response.ts";
+import { validateIndianPhone } from "../_shared/validation.ts";
+
+interface CancelSubscriptionBody {
+  phone?: unknown;
+}
+
+function createServiceClient() {
+  return createClient(
+    requireEnv("SUPABASE_URL"),
+    requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+    },
+  );
+}
+
+Deno.serve(async (req) => {
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: jsonHeaders,
-    });
+    return errorResponse(ERROR_CODES.METHOD_NOT_ALLOWED);
+  }
+
+  let body: CancelSubscriptionBody;
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse(ERROR_CODES.BAD_REQUEST, "Invalid JSON body");
+  }
+
+  const phoneResult = validateIndianPhone(body.phone);
+  if (!phoneResult.valid || !phoneResult.normalized) {
+    return errorResponse(ERROR_CODES.PHONE_INVALID);
   }
 
   try {
-    const log = (step: string, meta: Record<string, unknown> = {}) =>
-      console.log(JSON.stringify({ fn: "cancel-subscription", step, ...meta }));
-    const body = await req.json();
-    const subscription_id =
-      typeof body.subscription_id === "string" ? body.subscription_id.trim() : "";
-    const cancelNowIfTrial = body.cancel_now_if_trial !== false;
+    requireEnv("CASHFREE_CLIENT_ID");
+    requireEnv("CASHFREE_CLIENT_SECRET");
 
-    if (!subscription_id) {
-      return new Response(JSON.stringify({ error: "subscription_id required" }), {
-        status: 400,
-        headers: jsonHeaders,
-      });
-    }
+    const supabase = createServiceClient();
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, serviceKey);
-
-    const { data: rows, error: lookupErr } = await supabase
+    // Resolve the application user via the existing phone-based auth lookup.
+    const { data: user, error: lookupError } = await supabase
       .from("users")
-      .select("phone_number, subscription_status")
-      .eq("razorpay_subscription_id", subscription_id)
-      .limit(1);
+      .select("id, phone_number")
+      .eq("phone_number", phoneResult.normalized)
+      .maybeSingle();
 
-    if (lookupErr) {
-      console.error("cancel-subscription lookup", lookupErr);
-      return new Response(JSON.stringify({ error: lookupErr.message }), {
-        status: 500,
-        headers: jsonHeaders,
-      });
+    if (lookupError) {
+      console.error("cancel-subscription user lookup failed", lookupError.message);
+      return errorResponse(ERROR_CODES.INTERNAL_SERVER_ERROR);
     }
 
-    if (!rows?.length) {
-      return new Response(
-        JSON.stringify({
-          error:
-            "No account matches this subscription. Complete signup and payment in the app first.",
-        }),
-        { status: 404, headers: jsonHeaders },
+    if (!user) {
+      return errorResponse(
+        ERROR_CODES.BAD_REQUEST,
+        "No user found for this phone number",
       );
     }
 
-    const subStatus = (rows[0].subscription_status ?? "").toLowerCase();
+    const userId = user.id as string | number;
 
-    if (subStatus === "trial") {
-      if (cancelNowIfTrial) {
-        const keyId = Deno.env.get("RAZORPAY_KEY_ID");
-        const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
-        if (keyId && keySecret) {
-          const auth = btoa(`${keyId}:${keySecret}`);
-          const rz = await fetch(
-            `https://api.razorpay.com/v1/subscriptions/${subscription_id}/cancel`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Basic ${auth}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ cancel_at_cycle_end: 0 }),
-            },
-          );
-          if (!rz.ok) {
-            const rzData = await rz.json();
-            const razorpayMsg =
-              rzData?.error?.description ||
-              rzData?.error?.message ||
-              JSON.stringify(rzData);
-            return new Response(JSON.stringify({ error: `Razorpay: ${razorpayMsg}` }), {
-              status: 502,
-              headers: jsonHeaders,
-            });
-          }
-          log("trial_razorpay_cancelled", { subscription_id });
-        }
-      }
+    // Latest ACTIVE only — never pending or expired.
+    const { data: subscription, error: subscriptionError } = await supabase
+      .from("subscriptions")
+      .select("id, status, cashfree_subscription_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      const cancelledAt = new Date().toISOString();
-      const { error: dbErr } = await supabase
-        .from("users")
-        .update({
-          is_subscribed: false,
-          subscription_status: "cancel_requested",
-          cancelled_at: cancelledAt,
-        })
-        .eq("razorpay_subscription_id", subscription_id);
+    if (subscriptionError) {
+      console.error("cancel-subscription active subscription lookup failed", {
+        userId,
+        message: subscriptionError.message,
+      });
+      return errorResponse(ERROR_CODES.INTERNAL_SERVER_ERROR);
+    }
 
-      if (dbErr) {
-        return new Response(JSON.stringify({ error: dbErr.message }), {
-          status: 500,
-          headers: jsonHeaders,
+    if (!subscription) {
+      console.info("cancel-subscription already cancelled (no active)", {
+        userId,
+      });
+      return successResponse("Subscription is already cancelled.", {
+        alreadyCancelled: true,
+      });
+    }
+
+    const cashfreeSubscriptionId =
+      typeof subscription.cashfree_subscription_id === "string"
+        ? subscription.cashfree_subscription_id.trim()
+        : "";
+
+    if (!cashfreeSubscriptionId) {
+      // Nothing to cancel at Cashfree — treat as idempotent success.
+      console.info("cancel-subscription already cancelled (missing cashfree id)", {
+        userId,
+        subscriptionRowId: subscription.id,
+      });
+      return successResponse("Subscription is already cancelled.", {
+        alreadyCancelled: true,
+      });
+    }
+
+    console.info("cancel-subscription calling Cashfree CANCEL", {
+      userId,
+      subscriptionRowId: subscription.id,
+      cashfreeSubscriptionId,
+    });
+
+    const cancelResult = await cancelCashfreeSubscription(cashfreeSubscriptionId);
+
+    if (cancelResult.skipped) {
+      console.info("cancel-subscription skipped", {
+        userId,
+        subscriptionRowId: subscription.id,
+        cashfreeSubscriptionId,
+        detail: cancelResult.detail,
+      });
+      return successResponse("Subscription is already cancelled.", {
+        alreadyCancelled: true,
+      });
+    }
+
+    if (!cancelResult.success) {
+      // Webhook delay window: Cashfree may already be cancelled / cancelling.
+      if (isNonActionableCancelError(cancelResult.detail)) {
+        console.info("cancel-subscription Cashfree already cancelling", {
+          userId,
+          subscriptionRowId: subscription.id,
+          cashfreeSubscriptionId,
+          detail: cancelResult.detail,
+        });
+        return successResponse("Cancellation request already submitted.", {
+          alreadyCancelling: true,
         });
       }
-      log("trial_cancel_requested", { subscription_id, cancel_now_if_trial: cancelNowIfTrial });
-      return new Response(JSON.stringify({ success: true, mode: "trial_cancel" }), {
-        status: 200,
-        headers: jsonHeaders,
+
+      console.error("cancel-subscription Cashfree CANCEL failed", {
+        userId,
+        subscriptionRowId: subscription.id,
+        cashfreeSubscriptionId,
+        detail: cancelResult.detail,
       });
+      return errorResponse(
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        cancelResult.detail ?? "Cashfree CANCEL failed",
+      );
     }
 
-    const keyId = Deno.env.get("RAZORPAY_KEY_ID");
-    const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
-    if (!keyId || !keySecret) {
-      return new Response(JSON.stringify({ error: "Razorpay not configured" }), {
-        status: 503,
-        headers: jsonHeaders,
-      });
-    }
-
-    const auth = btoa(`${keyId}:${keySecret}`);
-    const rz = await fetch(
-      `https://api.razorpay.com/v1/subscriptions/${subscription_id}/cancel`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ cancel_at_cycle_end: 1 }),
-      },
-    );
-
-    const rzData = await rz.json();
-
-    if (!rz.ok) {
-      const razorpayMsg =
-        rzData?.error?.description ||
-        rzData?.error?.message ||
-        (typeof rzData?.error === "string" ? rzData.error : null) ||
-        rzData?.message ||
-        JSON.stringify(rzData);
-      console.error("Razorpay cancel failed", razorpayMsg);
-      return new Response(JSON.stringify({ error: `Razorpay: ${razorpayMsg}` }), {
-        status: 502,
-        headers: jsonHeaders,
-      });
-    }
-
-    const { error: dbError, data: updated } = await supabase
-      .from("users")
-      .update({
-        subscription_status: "cancel_requested",
-        cancelled_at: new Date().toISOString(),
-      })
-      .eq("razorpay_subscription_id", subscription_id)
-      .select("phone_number");
-
-    if (dbError) {
-      return new Response(JSON.stringify({ error: dbError.message }), {
-        status: 500,
-        headers: jsonHeaders,
-      });
-    }
-
-    if (!updated?.length) {
-      return new Response(JSON.stringify({ error: "Database update failed" }), {
-        status: 500,
-        headers: jsonHeaders,
-      });
-    }
-
-    log("cancel_requested", { subscription_id });
-    return new Response(JSON.stringify({ success: true, mode: "razorpay_cancel" }), {
-      status: 200,
-      headers: jsonHeaders,
+    // Do NOT update subscriptions — webhook owns status / autopay / dates.
+    console.info("cancel-subscription Cashfree CANCEL submitted", {
+      userId,
+      subscriptionRowId: subscription.id,
+      cashfreeSubscriptionId,
     });
-  } catch (e) {
-    console.error("cancel-subscription", e);
-    return new Response(JSON.stringify({ error: String(e?.message ?? e) }), {
-      status: 500,
-      headers: jsonHeaders,
-    });
+
+    return successResponse("Cancellation request submitted.");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("cancel-subscription unexpected error", detail);
+    return errorResponse(ERROR_CODES.INTERNAL_SERVER_ERROR);
   }
 });

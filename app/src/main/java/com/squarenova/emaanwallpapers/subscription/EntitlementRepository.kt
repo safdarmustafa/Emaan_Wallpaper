@@ -2,9 +2,8 @@ package com.squarenova.emaanwallpapers.subscription
 
 import android.content.Context
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.data.MandateDebugLog
 import com.squarenova.emaanwallpapers.data.MandateEntitlementResolver
-import com.squarenova.emaanwallpapers.data.SubscriptionEntitlement
+import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionRepository
 import com.squarenova.emaanwallpapers.util.SecureLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +55,10 @@ object EntitlementRepository {
     var lastStatus: String? = null
         private set
 
+    private val _subscription = MutableStateFlow<CashfreeSubscriptionRepository.SubscriptionStatus?>(null)
+    /** Last Cashfree subscription-status snapshot (status, end_date, autopay…); null until fetched. */
+    val subscription: StateFlow<CashfreeSubscriptionRepository.SubscriptionStatus?> = _subscription.asStateFlow()
+
     fun init(context: Context) {
         if (dataStore == null) {
             dataStore = DataStoreManager(context.applicationContext)
@@ -72,13 +75,13 @@ object EntitlementRepository {
     }
 
     /**
-     * The single premium refresh. Fetches the user row, activates the trial if the mandate is
-     * authenticated-but-not-yet-trial, computes entitlement, caches it and updates [premium].
+     * The single premium refresh. Confirms the user row still exists, then reads premium from the
+     * Cashfree `subscription-status` Edge Function, caches it and updates [premium].
      *
-     * @param skipActivateTrial skips activate-trial when it already succeeded earlier in the same
-     *   confirmation flow — safe because activate-trial is idempotent and the server is authoritative.
-     * @return premium flag plus whether activate-trial succeeded in this refresh. Never throws.
+     * @param skipActivateTrial unused with Cashfree; kept for the legacy Razorpay call sites.
+     * @return premium flag. Never throws.
      */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun refreshDetailed(
         phone: String,
         skipActivateTrial: Boolean = false,
@@ -96,44 +99,30 @@ object EntitlementRepository {
             MandateEntitlementResolver.RowLookup.Missing -> {
                 SecureLog.w(TAG, "refresh account missing — clearing cached premium")
                 lastStatus = null
+                _subscription.value = null
                 persist(false)
                 _premium.value = false
                 return RefreshResult(hasPremium = false, accountMissing = true)
             }
             is MandateEntitlementResolver.RowLookup.Found -> {
-                val row = lookup.row
-                return try {
-                    val activation = MandateEntitlementResolver.ensureTrialActivatedIfNeeded(
-                        cleanPhone,
-                        row,
-                        skipActivateTrial = skipActivateTrial,
-                    )
-                    val finalRow = activation.row ?: row
-
-                    val hasPremium = SubscriptionEntitlement.hasPremiumAccess(
-                        subscriptionStatus = finalRow.subscription_status,
-                        trialEndIso = finalRow.trial_end,
-                    )
-                    lastStatus = finalRow.subscription_status
-
-                    MandateDebugLog.syncResult(
-                        phone = cleanPhone,
-                        hasPremium = hasPremium,
-                        subscriptionStatus = finalRow.subscription_status,
-                        trialEnd = finalRow.trial_end,
-                    )
-
-                    persist(hasPremium)
-                    _premium.value = hasPremium
-                    SecureLog.d(TAG, "refresh phone=${SecureLog.redactPhone(cleanPhone)} premium=$hasPremium status=${finalRow.subscription_status}")
-                    RefreshResult(
-                        hasPremium = hasPremium,
-                        activateTrialSucceeded = activation.activateTrialSucceeded,
-                    )
-                } catch (e: Exception) {
-                    SecureLog.w(TAG, "refresh compute/activate failed, keeping cached=$cached: ${e.message}")
-                    RefreshResult(hasPremium = cached)
-                }
+                // Cashfree only: premium comes from subscription-status, never from the users row.
+                return CashfreeSubscriptionRepository.getSubscriptionStatus(cleanPhone).fold(
+                    onSuccess = { status ->
+                        lastStatus = status.status
+                        _subscription.value = status
+                        persist(status.isPremium)
+                        _premium.value = status.isPremium
+                        SecureLog.d(
+                            TAG,
+                            "refresh phone=${SecureLog.redactPhone(cleanPhone)} premium=${status.isPremium} status=${status.status}",
+                        )
+                        RefreshResult(hasPremium = status.isPremium)
+                    },
+                    onFailure = { e ->
+                        SecureLog.w(TAG, "subscription-status failed, keeping cached=$cached: ${e.message}")
+                        RefreshResult(hasPremium = cached)
+                    },
+                )
             }
         }
     }
@@ -146,6 +135,7 @@ object EntitlementRepository {
     /** Resets the in-memory premium flag on logout (the DataStore cache is cleared by logout()). */
     fun clearForLogout() {
         lastStatus = null
+        _subscription.value = null
         _premium.value = false
     }
 
