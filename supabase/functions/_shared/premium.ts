@@ -3,8 +3,8 @@
  * cashfree-webhook.
  *
  * subscriptions.end_date is the ONLY paid-through source:
- *   - ₹3 authorization  → end_date = end of first ₹249 charge day + grace (trial)
- *   - ₹249 charge       → end_date = end of next billing day + grace
+ *   - ₹3 authorization  → end_date = end of first ₹499 charge day + grace (trial)
+ *   - ₹499 charge       → end_date = end of next billing day + grace
  *   - nothing collected → end_date passes → not Premium
  *
  * status only says what the mandate is doing; it never grants Premium alone.

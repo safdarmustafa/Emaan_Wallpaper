@@ -3,31 +3,21 @@ package com.squarenova.emaanwallpapers.ui.subscription
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.squarenova.emaanwallpapers.data.SupabaseTimestampParser
-import kotlinx.coroutines.delay
 
 private val GoldStart = Color(0xFFD4AF37)
 private val GoldEnd = Color(0xFFFFD700)
@@ -105,92 +95,4 @@ fun PremiumBadge(
         }
         else -> {}
     }
-}
-
-private fun parseTrialEndMillis(iso: String?): Long? = SupabaseTimestampParser.parseToEpochMillis(iso)
-
-@Composable
-fun TrialCountdown(
-    trialEndIso: String?,
-    modifier: Modifier = Modifier,
-    compact: Boolean = false
-) {
-    var tick by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(trialEndIso) {
-        tick = 0
-        while (true) {
-            delay(60_000L)
-            tick++
-        }
-    }
-
-    val endMs = remember(trialEndIso) { parseTrialEndMillis(trialEndIso) }
-    val now = System.currentTimeMillis()
-    val text: String
-    val color: Color
-
-    if (endMs == null) {
-        text = "Trial"
-        color = Color(0xFF2E7D32)
-    } else {
-        val remaining = endMs - now
-        if (remaining <= 0L) {
-            text = "Trial expired"
-            color = Color(0xFFC62828)
-        } else {
-            val dayMs = 86_400_000L
-            val hourMs = 3_600_000L
-            val minMs = 60_000L
-            val d = remaining / dayMs
-            val h = (remaining % dayMs) / hourMs
-            val m = (remaining % hourMs) / minMs
-            text = when {
-                d >= 2L -> "$d days left in trial"
-                d == 1L -> "1 day left in trial"
-                d == 0L && h > 0 -> "${h}h ${m}m left in trial"
-                else -> "${m}m left in trial"
-            }
-            color = if (remaining <= 12 * hourMs) Color(0xFFC62828) else Color(0xFF2E7D32)
-        }
-    }
-
-    Text(
-        text = text,
-        modifier = modifier,
-        color = color,
-        fontSize = if (compact) 11.sp else 13.sp,
-        fontWeight = FontWeight.Medium
-    )
-}
-
-/**
- * One subtle line inside the home header (teal gradient) — no extra band, no wallpaper space lost.
- */
-@Composable
-fun HomeHeaderSubscriptionCaption(subscriptionStatus: String?) {
-    val s = subscriptionStatus?.lowercase()
-    val label = when (s) {
-        "trial" -> "Premium trial · full access"
-        "cancel_requested" -> "Plan not renewing · access until period ends"
-        else -> return
-    }
-    Spacer(modifier = Modifier.height(4.dp))
-    Text(
-        text = label,
-        color = Color.White.copy(alpha = 0.75f),
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Normal,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
-}
-
-@Composable
-fun SubscriptionBanner(
-    @Suppress("UNUSED_PARAMETER") isSubscribed: Boolean,
-    subscriptionStatus: String?,
-    @Suppress("UNUSED_PARAMETER") modifier: Modifier = Modifier
-) {
-    HomeHeaderSubscriptionCaption(subscriptionStatus)
 }

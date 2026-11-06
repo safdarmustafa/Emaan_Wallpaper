@@ -41,6 +41,7 @@ import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.network.OtpApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.ui.profile.UserRow
 import com.squarenova.emaanwallpapers.util.SecureLog
 import io.github.jan.supabase.postgrest.postgrest
@@ -141,8 +142,8 @@ fun OtpScreen(
                     EntitlementDebugLog.navigation(
                         source = "OtpScreen",
                         destination = if (isSubscribed) "home" else "subscription",
-                        subscriptionStatus = existingUser.subscription_status,
-                        trialEnd = existingUser.trial_end,
+                        subscriptionStatus = EntitlementRepository.lastStatus,
+                        trialEnd = EntitlementRepository.subscription.value?.endDate,
                         hasPremiumAccess = isSubscribed,
                     )
                     if (isSubscribed) {

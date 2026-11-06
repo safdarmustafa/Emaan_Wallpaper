@@ -51,12 +51,10 @@ class DataStoreManager(private val context: Context) {
         context.dataStore.edit { it[IS_PROFILE_COMPLETED] = true }
     }
 
-    // ✅ NEW — called after successful Razorpay payment
     suspend fun setSubscribed() {
         context.dataStore.edit { it[IS_SUBSCRIBED] = true }
     }
 
-    // ✅ NEW — called after successful subscription cancellation
     suspend fun setUnsubscribed() {
         context.dataStore.edit { it[IS_SUBSCRIBED] = false }
     }

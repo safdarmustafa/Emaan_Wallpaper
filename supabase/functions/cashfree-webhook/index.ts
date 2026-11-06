@@ -8,8 +8,8 @@
  * Does NOT activate premium from the client.
  *
  * Premium time lives in end_date (see _shared/premium.ts):
- *   ₹3 AUTH success    → trial until first ₹249 charge + grace
- *   ₹249 CHARGE success → until next billing date + grace
+ *   ₹3 AUTH success    → trial until first ₹499 charge + grace
+ *   ₹499 CHARGE success → until next billing date + grace
  *   failures            → logged only; end_date simply runs out
  */
 
@@ -153,7 +153,7 @@ function nowIso(): string {
 type PaymentKind = "AUTH" | "CHARGE";
 
 /**
- * ₹3 authorization vs ₹249 recurring charge. Prefers Cashfree payment_type;
+ * ₹3 authorization vs ₹499 recurring charge. Prefers Cashfree payment_type;
  * falls back to the amount only when payment_type is missing / unknown.
  */
 function classifyPayment(data: Record<string, unknown>): PaymentKind | null {
@@ -174,7 +174,7 @@ function extractPaymentDate(data: Record<string, unknown>): Date | null {
 const MIN_NEXT_CYCLE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Trial paid-through for a ₹3 authorization: end of the first ₹249 charge day
+ * Trial paid-through for a ₹3 authorization: end of the first ₹499 charge day
  * (IST) + grace. Without a usable first-charge date, a 1-day trial + grace.
  */
 function computeTrialEndDate(firstCharge: Date | null, now: Date): Date {
@@ -186,7 +186,7 @@ function computeTrialEndDate(firstCharge: Date | null, now: Date): Date {
 }
 
 /**
- * Paid-through for a successful ₹249 charge: end of Cashfree's next scheduled
+ * Paid-through for a successful ₹499 charge: end of Cashfree's next scheduled
  * debit day + grace. If next_schedule_date has not moved to the next cycle yet,
  * one calendar month after the charge instead — never "tomorrow".
  */
@@ -375,14 +375,14 @@ Deno.serve(async (req) => {
 
       let computedEnd: Date;
       if (kind === "CHARGE") {
-        // ₹249 collected: always (re)activate and extend to the next billing date.
+        // ₹499 collected: always (re)activate and extend to the next billing date.
         updates.status = "active" satisfies LocalSubscriptionStatus;
         computedEnd = computeChargeEndDate(
           parseDate(nextBilling),
           extractPaymentDate(data) ?? processedAt,
         );
       } else {
-        // ₹3 authorization: trial only, until the first ₹249 charge (+ grace).
+        // ₹3 authorization: trial only, until the first ₹499 charge (+ grace).
         if (!isTerminalStatus(subscription.status)) {
           updates.status = "active" satisfies LocalSubscriptionStatus;
         }

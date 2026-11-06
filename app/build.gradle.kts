@@ -7,14 +7,6 @@ plugins {
     kotlin("plugin.serialization") version "1.9.24" // ✅ Required for Supabase
 }
 
-configurations.configureEach {
-    resolutionStrategy {
-        // checkout POM depends on standard-core "LATEST"; without this Gradle can pick 1.7.x, which pulls
-        // com.razorpay:core and breaks AGP (duplicate namespace com.razorpay).
-        force("com.razorpay:standard-core:1.6.56")
-    }
-}
-
 android {
     namespace = "com.squarenova.emaanwallpapers"
 
@@ -24,8 +16,8 @@ android {
         applicationId = "com.squarenova.emaanwallpapers"
         minSdk = 24
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.1.5"
+        versionCode = 11
+        versionName = "1.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -45,7 +37,6 @@ android {
         // Secrets: define in local.properties (gitignored). See local.properties.example at repo root.
         buildConfigField("String", "SUPABASE_URL", "\"${prop("SUPABASE_URL").escapeForBuildConfig()}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${prop("SUPABASE_ANON_KEY").escapeForBuildConfig()}\"")
-        buildConfigField("String", "RAZORPAY_KEY_ID", "\"${prop("RAZORPAY_KEY_ID").escapeForBuildConfig()}\"")
         buildConfigField("String", "MIXPANEL_TOKEN", "\"${prop("MIXPANEL_TOKEN").escapeForBuildConfig()}\"")
         // Must match the backend CASHFREE_ENV secret (TEST | PRODUCTION).
         buildConfigField("String", "CASHFREE_ENV", "\"${prop("CASHFREE_ENV").ifBlank { "TEST" }.escapeForBuildConfig()}\"")
@@ -93,14 +84,8 @@ android {
 }
 
 dependencies {
-    // ✅ Material Design - Compatible with Razorpay (latest stable)
+    // ✅ Material Design (latest stable)
     implementation("com.google.android.material:material:1.12.0")
-
-    // ✅ Razorpay — checkout + standard-core new enough for API 33+ registerReceiver flag.
-    // Use standard-core 1.6.x (e.g. 1.6.56): 1.7.x adds com.razorpay:core, and both AARs declare namespace
-    // "com.razorpay", which makes AGP fail manifest processing. 1.6.56 has the 5-arg registerReceiver fix.
-    implementation("com.razorpay:checkout:1.6.41")
-    implementation("com.razorpay:standard-core:1.6.56")
 
     // Cashfree Subscription SDK (UPI Autopay mandate via UPI Intent)
     implementation("com.cashfree.pg:api:2.5.0")
@@ -146,10 +131,6 @@ dependencies {
     // 📊 Mixpanel Analytics
     implementation("com.mixpanel.android:mixpanel-android:7.2.2")
 
-    // 📩 Retrofit (Fast2SMS OTP — keeping untouched)
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.10.0")
     // facebook sdk or meta sdk dependency
     implementation("com.facebook.android:facebook-android-sdk:18.3.0")
     // 🎨 Compose

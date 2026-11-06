@@ -35,7 +35,6 @@ import com.squarenova.emaanwallpapers.data.UserAccountLookup
 import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
-import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -59,8 +58,6 @@ fun SplashScreen(navController: NavController) {
                 animationSpec = tween(1200),
             )
             delay(1200)
-
-            SubscriptionOrchestrator.recover()
 
             val loggedIn = dataStoreManager.isLoggedIn.first()
             val profileCompleted = dataStoreManager.isProfileCompleted.first()

@@ -75,7 +75,6 @@ import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.data.model.User
 import com.squarenova.emaanwallpapers.network.AccountDeletionApi
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
-import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionRepository
 import com.squarenova.emaanwallpapers.network.OtpApi
 import com.squarenova.emaanwallpapers.network.SupabaseClient
@@ -103,10 +102,6 @@ data class UserRow(
     val first_name: String? = null,
     val last_name: String? = null,
     val avatar_url: String? = null,
-    val is_subscribed: Boolean? = null,
-    val razorpay_subscription_id: String? = null,
-    val subscription_status: String? = null,
-    val trial_end: String? = null,
 )
 
 @Serializable
@@ -114,11 +109,6 @@ data class UserUpdateRow(
     val first_name: String? = null,
     val last_name: String? = null,
     val avatar_url: String? = null,
-)
-
-@Serializable
-data class SubscriptionStatusPatch(
-    val subscription_status: String,
 )
 
 private data class ProfileMessage(val text: String, val isSuccess: Boolean)
@@ -240,13 +230,6 @@ fun ProfileScreen(navController: NavController) {
     val fullName = "${user?.first_name ?: ""} ${user?.last_name ?: ""}".trim()
     val phone = user?.phone_number.orEmpty()
     val avatarInitial = user?.first_name?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-
-    val statusLower = subscriptionStatus?.lowercase()
-    val canCancelSubscription = hasPremium && statusLower != "cancelled"
-
-    fun showComingSoon(feature: String) {
-        profileMessage = ProfileMessage("$feature coming soon", isSuccess = true)
-    }
 
     if (showEditDialog) {
         EditProfileDialog(
@@ -484,7 +467,7 @@ fun ProfileScreen(navController: NavController) {
                                 if (result.isSuccess) {
                                     leavingSnapshot = liveSubscription to livePremium
                                     AnalyticsManager.reset()
-                                    SubscriptionOrchestrator.onLogout()
+                                    EntitlementRepository.clearForLogout()
                                     dataStoreManager.logout()
                                     showDeleteDialog = false
                                     deleteOtp = ""
@@ -658,7 +641,7 @@ fun ProfileScreen(navController: NavController) {
                     leavingSnapshot = liveSubscription to livePremium
                     scope.launch {
                         AnalyticsManager.reset()
-                        SubscriptionOrchestrator.onLogout()
+                        EntitlementRepository.clearForLogout()
                         dataStoreManager.logout()
                         navController.navigate("login") { popUpTo("home") { inclusive = true } }
                     }

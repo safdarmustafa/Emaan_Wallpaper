@@ -72,7 +72,7 @@ serve(async (req) => {
 
     const { data: user, error: fetchErr } = await supabase
       .from("users")
-      .select("id, avatar_url, razorpay_subscription_id, subscription_status")
+      .select("id, avatar_url")
       .eq("phone_number", phone)
       .maybeSingle();
 
@@ -88,33 +88,6 @@ serve(async (req) => {
         status: 200,
         headers: jsonHeaders,
       });
-    }
-
-    // Best-effort: cancel active Razorpay subscription before deletion
-  if (user.razorpay_subscription_id &&
-      ["trial", "active", "authenticated", "created", "cancel_requested"].includes(
-        (user.subscription_status ?? "").toLowerCase(),
-      )) {
-      try {
-        const keyId = Deno.env.get("RAZORPAY_KEY_ID");
-        const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
-        if (keyId && keySecret) {
-          const auth = btoa(`${keyId}:${keySecret}`);
-          await fetch(
-            `https://api.razorpay.com/v1/subscriptions/${user.razorpay_subscription_id}/cancel`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Basic ${auth}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ cancel_at_cycle_end: 0 }),
-            },
-          );
-        }
-      } catch (e) {
-        console.warn("Razorpay cancel during delete failed", e);
-      }
     }
 
     if (user.avatar_url) {

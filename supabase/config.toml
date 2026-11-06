@@ -383,70 +383,10 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
-[functions.razorpay-subscription]
-enabled = true
-verify_jwt = true
-import_map = "./functions/razorpay-subscription/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/razorpay-subscription/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/razorpay-subscription/*.html" ]
-
-[functions.razorpay-webhook]
-enabled = true
-# Razorpay servers do not send Supabase JWT — verify HMAC in function body only
-verify_jwt = false
-import_map = "./functions/razorpay-webhook/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/razorpay-webhook/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/razorpay-webhook/*.html" ]
-
-[functions.create-order]
-enabled = true
-verify_jwt = true
-import_map = "./functions/create-order/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/create-order/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/create-order/*.html" ]
-
-[functions.verify-payment]
-enabled = true
-verify_jwt = true
-entrypoint = "./functions/verify-payment/index.ts"
-
-[functions.start-trial]
-enabled = true
-verify_jwt = true
-entrypoint = "./functions/start-trial/index.ts"
-
 [functions.create-subscription]
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/create-subscription/index.ts"
-
-[functions.validate-subscription-status]
-enabled = true
-verify_jwt = true
-entrypoint = "./functions/validate-subscription-status/index.ts"
-
-[functions.expire-trials]
-enabled = true
-verify_jwt = true
-entrypoint = "./functions/expire-trials/index.ts"
-
-[functions.activate-trial]
-enabled = true
-verify_jwt = true
-import_map = "./functions/activate-trial/deno.json"
-entrypoint = "./functions/activate-trial/index.ts"
 
 [functions.cancel-subscription]
 enabled = true
@@ -458,3 +398,16 @@ entrypoint = "./functions/cancel-subscription/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/cancel-subscription/*.html" ]
+
+[functions.cashfree-webhook]
+enabled = true
+# Cashfree servers do not send a Supabase JWT — x-webhook-signature is verified in the function body
+verify_jwt = false
+import_map = "./functions/cashfree-webhook/deno.json"
+entrypoint = "./functions/cashfree-webhook/index.ts"
+
+[functions.subscription-status]
+enabled = true
+verify_jwt = true
+import_map = "./functions/subscription-status/deno.json"
+entrypoint = "./functions/subscription-status/index.ts"

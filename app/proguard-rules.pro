@@ -6,11 +6,10 @@
 # BuildConfig
 -keep class com.squarenova.emaanwallpapers.BuildConfig { *; }
 
-# Razorpay
+# WebView JS bridges (Cashfree / Facebook)
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
--dontwarn com.razorpay.**
 
 # Kotlin serialization (Supabase models)
 -keepattributes *Annotation*, InnerClasses
@@ -23,10 +22,9 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-# Retrofit / OkHttp
+# OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
--keep class retrofit2.** { *; }
 
 # Coil
 -dontwarn coil.**
@@ -36,10 +34,6 @@
 -dontwarn com.facebook.**
 
 # Strip debug-only log classes in release (optional shrink)
--assumenosideeffects class com.squarenova.emaanwallpapers.data.MandateDebugLog {
-    public static *** note(...);
-    public static *** entitlementCheck(...);
-}
 -assumenosideeffects class com.squarenova.emaanwallpapers.data.EntitlementDebugLog {
     public static *** check(...);
     public static *** navigation(...);

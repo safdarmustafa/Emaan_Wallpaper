@@ -59,7 +59,6 @@ import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
-import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
 import com.squarenova.emaanwallpapers.subscription.SubscriptionPricing
 import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionCheckout
 import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionRepository
@@ -152,7 +151,7 @@ fun SubscriptionScreen(navController: NavController) {
         scope.launch {
             showUpiPicker = false
             showTrialSuccessScreen = false
-            SubscriptionOrchestrator.onLogout()
+            EntitlementRepository.clearForLogout()
             dataStoreManager.logout()
             navController.navigate("login") {
                 popUpTo("subscription") { inclusive = true }

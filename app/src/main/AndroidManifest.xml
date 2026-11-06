@@ -61,7 +61,7 @@
         <!-- Main Activity -->
         <!-- ========================= -->
 
-        <!-- singleTop ensures Razorpay/UPI returns to same activity -->
+        <!-- singleTop ensures the UPI app returns to the same activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -75,16 +75,6 @@
             </intent-filter>
 
         </activity>
-
-        <!-- ========================= -->
-        <!-- Razorpay -->
-        <!-- ========================= -->
-
-        <!-- Razorpay checkout activity -->
-        <activity
-            android:name="com.razorpay.CheckoutActivity"
-            android:theme="@style/Theme.RazorpayCheckout"
-            tools:replace="android:theme" />
 
         <!-- ========================= -->
         <!-- Live Wallpaper Service -->

@@ -30,7 +30,6 @@ object PaymentErrors {
     fun classify(
         raw: String? = null,
         throwable: Throwable? = null,
-        errorCode: Int? = null,
         isMandateStep: Boolean = false,
     ): PaymentErrorType {
         val msg = buildString {
@@ -41,14 +40,6 @@ object PaymentErrors {
                 append(' ')
                 append(it::class.simpleName.orEmpty().lowercase())
             }
-        }
-
-        // Razorpay Checkout: 0 = cancelled by user, 4 = checkout closed by user
-        if (errorCode == 0 || errorCode == 4) {
-            return PaymentErrorType.PAYMENT_CANCELLED
-        }
-        if (errorCode == 2) {
-            return PaymentErrorType.NETWORK_ERROR
         }
 
         if (msg.contains("cancel") || msg.contains("cancelled") || msg.contains("canceled")) {

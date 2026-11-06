@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -612,67 +609,6 @@ private fun ProfileSubscriptionDetailRow(
             color = valueColor,
             textAlign = TextAlign.End,
         )
-    }
-}
-
-data class ProfileQuickAction(
-    val label: String,
-    val icon: ImageVector,
-    val onClick: () -> Unit,
-)
-
-@Composable
-fun ProfileQuickActionsSection(
-    actions: List<ProfileQuickAction>,
-    modifier: Modifier = Modifier,
-) {
-    ProfileSectionTitle(title = "Quick Actions", modifier = modifier)
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(200.dp)
-            .padding(horizontal = ProfileHorizontalPadding),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        userScrollEnabled = false,
-    ) {
-        items(actions) { action ->
-            Card(
-                onClick = action.onClick,
-                shape = ProfileCardShape,
-                colors = CardDefaults.cardColors(containerColor = ProfileCardSurface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = ProfileEmerald.copy(alpha = 0.1f),
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = action.icon,
-                                contentDescription = action.label,
-                                tint = ProfileEmerald,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    }
-                    Text(
-                        text = action.label,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = AppTextPrimary,
-                    )
-                }
-            }
-        }
     }
 }
 

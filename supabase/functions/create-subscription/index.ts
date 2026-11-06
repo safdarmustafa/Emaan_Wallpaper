@@ -10,7 +10,7 @@
  *
  * Does NOT activate premium or handle webhooks.
  * Active subscriptions that are still Premium return alreadyExists (no new
- * Cashfree create). An "active" row whose end_date has passed (₹249 never
+ * Cashfree create). An "active" row whose end_date has passed (₹499 never
  * collected) is renewed like pending recovery, after its old mandate is
  * cancelled — so the user can pay again.
  */
@@ -511,7 +511,7 @@ Deno.serve(async (req) => {
       plan_type: LOCAL_PLAN_TYPE,
       status: "pending",
       cashfree_subscription_id: created.subscriptionId,
-      // First ₹249 debit time; the trial end_date is derived from it.
+      // First ₹499 debit time; the trial end_date is derived from it.
       next_billing_date: created.firstChargeTime,
     });
 

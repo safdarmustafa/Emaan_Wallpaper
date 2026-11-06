@@ -136,16 +136,7 @@ data class UserRow(
     val phone_number: String,
     val first_name: String? = null,
     val last_name: String? = null,
-    val age: Int? = null,
-    val country: String? = null,
-    val city: String? = null,
-    val gender: String? = null,
     val avatar_url: String? = null,
-    val is_subscribed: Boolean? = false,
-    val subscription_status: String? = null,
-    val trial_end: String? = null,
-    val razorpay_subscription_id: String? = null,
-    val current_period_end: String? = null
 )
 
 enum class WallpaperFilter(val label: String, val emoji: String, val description: String) {

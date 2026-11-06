@@ -2,7 +2,8 @@ package com.squarenova.emaanwallpapers.subscription
 
 import android.content.Context
 import com.squarenova.emaanwallpapers.data.DataStoreManager
-import com.squarenova.emaanwallpapers.data.MandateEntitlementResolver
+import com.squarenova.emaanwallpapers.data.UserAccountLookup
+import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionRepository
 import com.squarenova.emaanwallpapers.util.SecureLog
 import kotlinx.coroutines.CoroutineScope
@@ -15,29 +16,28 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.Serializable
 
 /**
- * Subscription System V2 — the ONE source of truth for premium entitlement.
- *
- * Every previous "sync + is-premium" path funnels here (including [com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager],
- * which now delegates to [refresh]). The rules themselves stay in [SubscriptionEntitlement] (the
- * single pure calculation); this repository owns fetching, trial activation, caching and the
- * observable [premium] flow that UI can collect.
+ * The ONE source of truth for premium entitlement: the Cashfree `subscription-status` Edge
+ * Function. Every "is premium" path funnels here (including
+ * [com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager], which delegates to [refresh]).
+ * This repository owns fetching, caching and the observable [premium] flow that UI can collect.
  *
  * Guarantees:
- *  - [refresh] is single-flight (a [Mutex]) so concurrent callers never double-activate or race.
+ *  - [refresh] is single-flight (a [Mutex]) so concurrent callers never race.
  *  - Never throws; on network failure it returns the cached value.
  */
 object EntitlementRepository {
 
-    /** Result of a premium refresh; used by confirmation to avoid duplicate activate-trial calls. */
     data class RefreshResult(
         val hasPremium: Boolean,
-        /** True when activate-trial succeeded during this refresh (server idempotent). */
-        val activateTrialSucceeded: Boolean = false,
         /** True when users table returned no row (account deleted). Not a network failure. */
         val accountMissing: Boolean = false,
     )
+
+    @Serializable
+    private data class UserIdRow(val id: String? = null)
 
     private const val TAG = "EntitlementRepository"
 
@@ -78,25 +78,20 @@ object EntitlementRepository {
      * The single premium refresh. Confirms the user row still exists, then reads premium from the
      * Cashfree `subscription-status` Edge Function, caches it and updates [premium].
      *
-     * @param skipActivateTrial unused with Cashfree; kept for the legacy Razorpay call sites.
      * @return premium flag. Never throws.
      */
-    @Suppress("UNUSED_PARAMETER")
-    suspend fun refreshDetailed(
-        phone: String,
-        skipActivateTrial: Boolean = false,
-    ): RefreshResult = refreshLock.withLock {
+    suspend fun refreshDetailed(phone: String): RefreshResult = refreshLock.withLock {
         val cleanPhone = phone.trim()
         val cached = readCache()
         if (cleanPhone.isBlank()) return RefreshResult(hasPremium = cached)
 
         // Unreachable (offline) keeps cache. Missing (empty users row) is a deleted account.
-        when (val lookup = MandateEntitlementResolver.lookupRow(cleanPhone)) {
-            MandateEntitlementResolver.RowLookup.Unreachable -> {
+        when (UserAccountQueries.lookupByPhone<UserIdRow>(cleanPhone)) {
+            UserAccountLookup.Unreachable -> {
                 SecureLog.w(TAG, "refresh inconclusive (offline) — keeping cached=$cached")
                 return RefreshResult(hasPremium = cached)
             }
-            MandateEntitlementResolver.RowLookup.Missing -> {
+            UserAccountLookup.Missing -> {
                 SecureLog.w(TAG, "refresh account missing — clearing cached premium")
                 lastStatus = null
                 _subscription.value = null
@@ -104,7 +99,7 @@ object EntitlementRepository {
                 _premium.value = false
                 return RefreshResult(hasPremium = false, accountMissing = true)
             }
-            is MandateEntitlementResolver.RowLookup.Found -> {
+            is UserAccountLookup.Found -> {
                 // Cashfree only: premium comes from subscription-status, never from the users row.
                 return CashfreeSubscriptionRepository.getSubscriptionStatus(cleanPhone).fold(
                     onSuccess = { status ->
@@ -127,9 +122,7 @@ object EntitlementRepository {
         }
     }
 
-    /**
-     * Convenience wrapper — callers outside confirmation only need the premium boolean.
-     */
+    /** Convenience wrapper for callers that only need the premium boolean. */
     suspend fun refresh(phone: String): Boolean = refreshDetailed(phone).hasPremium
 
     /** Resets the in-memory premium flag on logout (the DataStore cache is cleared by logout()). */

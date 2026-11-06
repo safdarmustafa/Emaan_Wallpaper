@@ -3,11 +3,11 @@ package com.squarenova.emaanwallpapers.data
 import android.content.Context
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
-import com.squarenova.emaanwallpapers.subscription.SubscriptionOrchestrator
+import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 
 /**
  * Clears on-device login when the server account no longer exists.
- * Does not touch Razorpay or remote billing.
+ * Does not touch remote billing.
  */
 object LocalSession {
 
@@ -17,7 +17,7 @@ object LocalSession {
         } catch (_: Exception) {
             // Analytics must never block logout.
         }
-        SubscriptionOrchestrator.onLogout()
+        EntitlementRepository.clearForLogout()
         DataStoreManager(context).logout()
     }
 
