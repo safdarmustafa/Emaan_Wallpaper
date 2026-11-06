@@ -72,6 +72,7 @@ import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.data.UserAccountLookup
 import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
+import com.squarenova.emaanwallpapers.network.CategoryCatalog
 import com.squarenova.emaanwallpapers.network.WallpaperCatalog
 import com.squarenova.emaanwallpapers.network.WallpaperRow
 import com.squarenova.emaanwallpapers.network.isLiveWallpaper
@@ -234,16 +235,12 @@ fun HomeScreen(navController: NavController) {
     var shuffleTrigger by remember { mutableIntStateOf(0) }
 
     // null = no category selected (show all)
-    val categories = listOf(
-        "kaaba",
-        "madinah",
-        "quran",
-        "mosque",
-        "islamic_quotes",
-        "ramadan",
-        "allah",
-        "general"
-    )
+    var categories by remember {
+        mutableStateOf(CategoryCatalog.cached(context, CategoryCatalog.TYPE_WALLPAPER))
+    }
+    LaunchedEffect(Unit) {
+        categories = CategoryCatalog.fetch(context, CategoryCatalog.TYPE_WALLPAPER)
+    }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     var redirectedToSubscription by remember { mutableStateOf(false) }
@@ -555,19 +552,19 @@ fun HomeScreen(navController: NavController) {
 
                 // Category chips — hidden when Live filter active
                 if (activeFilter != WallpaperFilter.LIVE) {
-                    items(categories) { category ->
+                    items(categories, key = { it.slug }) { category ->
+                        val isSelected = selectedCategory == category.slug
                         FilterChip(
-                            selected = selectedCategory == category,
+                            selected = isSelected,
                             onClick = {
-                                selectedCategory =
-                                    if (selectedCategory == category) null else category
+                                selectedCategory = if (isSelected) null else category.slug
                                 shuffleTrigger++
                             },
                             label = {
                                 Text(
-                                    category.replaceFirstChar { it.uppercase() },
+                                    category.label,
                                     fontSize = 12.sp,
-                                    color = if (selectedCategory == category) Color.White else AppTextPrimary
+                                    color = if (isSelected) Color.White else AppTextPrimary
                                 )
                             },
                             modifier = Modifier.padding(horizontal = 4.dp),

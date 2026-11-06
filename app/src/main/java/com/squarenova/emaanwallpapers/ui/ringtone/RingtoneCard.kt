@@ -55,6 +55,7 @@ private val SetButtonFill = Color(0xFFF0F4F2)
 @Composable
 fun RingtoneCard(
     ringtone: Ringtone,
+    categoryLabel: String = ringtone.category,
     isPlaying: Boolean,
     currentPosition: Long,
     duration: Long,
@@ -103,7 +104,7 @@ fun RingtoneCard(
                     )
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
-                        text = "${ringtone.category} • ${formatDuration((duration / 1000).toInt())}",
+                        text = "$categoryLabel • ${formatDuration((duration / 1000).toInt())}",
                         fontSize = 12.sp,
                         color = TextSecondaryDark,
                         maxLines = 1,

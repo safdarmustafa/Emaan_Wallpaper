@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -54,6 +57,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squarenova.emaanwallpapers.data.model.Ringtone
+import com.squarenova.emaanwallpapers.network.CategoryCatalog
+import com.squarenova.emaanwallpapers.network.ContentCategory
 import com.squarenova.emaanwallpapers.theme.AppBackground
 import com.squarenova.emaanwallpapers.theme.AppDivider
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
@@ -177,11 +182,38 @@ fun RingtoneScreen(
         onDispose { audioPlayerManager.release() }
     }
 
-    val filtered = remember(ringtones, searchQuery) {
-        if (searchQuery.isBlank()) ringtones
-        else ringtones.filter {
-            it.title.contains(searchQuery, ignoreCase = true) ||
-                it.category.contains(searchQuery, ignoreCase = true)
+    var categories by remember {
+        mutableStateOf(CategoryCatalog.cached(context, CategoryCatalog.TYPE_RINGTONE))
+    }
+    LaunchedEffect(Unit) {
+        categories = CategoryCatalog.fetch(context, CategoryCatalog.TYPE_RINGTONE)
+    }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+
+    val visibleCategories = remember(categories, ringtones) {
+        categories.filter { cat -> ringtones.any { CategoryCatalog.matches(it.category, cat.slug) } }
+    }
+
+    fun labelFor(ringtone: Ringtone): String =
+        categories.firstOrNull { CategoryCatalog.matches(ringtone.category, it.slug) }?.label
+            ?: ringtone.category
+
+    LaunchedEffect(visibleCategories) {
+        if (selectedCategory != null && visibleCategories.none { it.slug == selectedCategory }) {
+            selectedCategory = null
+        }
+    }
+
+    val filtered = remember(ringtones, searchQuery, selectedCategory, categories) {
+        ringtones.filter { ringtone ->
+            val inCategory = selectedCategory?.let {
+                CategoryCatalog.matches(ringtone.category, it)
+            } ?: true
+            val inSearch = searchQuery.isBlank() ||
+                ringtone.title.contains(searchQuery, ignoreCase = true) ||
+                ringtone.category.contains(searchQuery, ignoreCase = true) ||
+                labelFor(ringtone).contains(searchQuery, ignoreCase = true)
+            inCategory && inSearch
         }
     }
 
@@ -233,6 +265,14 @@ fun RingtoneScreen(
                 )
             }
 
+            if (visibleCategories.isNotEmpty()) {
+                RingtoneCategoryChips(
+                    categories = visibleCategories,
+                    selectedCategory = selectedCategory,
+                    onSelect = { selectedCategory = it }
+                )
+            }
+
             when {
                 isLoading -> {
                     Box(
@@ -249,8 +289,11 @@ fun RingtoneScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (searchQuery.isBlank()) "No ringtones available"
-                            else "No results found",
+                            text = if (searchQuery.isBlank() && selectedCategory == null) {
+                                "No ringtones available"
+                            } else {
+                                "No results found"
+                            },
                             color = HeaderSubtitle
                         )
                     }
@@ -287,6 +330,7 @@ fun RingtoneScreen(
 
                             RingtoneCard(
                                 ringtone = ringtone,
+                                categoryLabel = labelFor(ringtone),
                                 isPlaying = isActive && playerState.isPlaying,
                                 currentPosition = if (isActive) playerState.currentPosition else 0L,
                                 duration = if (isActive && playerState.duration > 0)
@@ -358,6 +402,62 @@ fun RingtoneScreen(
             )
         }
     }
+}
+
+@Composable
+private fun RingtoneCategoryChips(
+    categories: List<ContentCategory>,
+    selectedCategory: String?,
+    onSelect: (String?) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item(key = "all") {
+            RingtoneChip(
+                label = "All",
+                selected = selectedCategory == null,
+                onClick = { onSelect(null) }
+            )
+        }
+        items(categories, key = { it.slug }) { category ->
+            val isSelected = selectedCategory == category.slug
+            RingtoneChip(
+                label = category.label,
+                selected = isSelected,
+                onClick = { onSelect(if (isSelected) null else category.slug) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun RingtoneChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                label,
+                fontSize = 12.sp,
+                color = if (selected) Color.White else AppTextPrimary
+            )
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = BrandGreen,
+            selectedLabelColor = Color.White,
+            containerColor = SearchSurface,
+            labelColor = AppTextPrimary
+        )
+    )
 }
 
 @Composable

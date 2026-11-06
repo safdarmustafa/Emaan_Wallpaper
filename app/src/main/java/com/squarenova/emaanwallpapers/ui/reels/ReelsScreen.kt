@@ -67,6 +67,7 @@ import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.R
+import com.squarenova.emaanwallpapers.network.CategoryCatalog
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -177,23 +178,12 @@ fun ReelsScreen(navController: NavController) {
     var toastMessage by remember { mutableStateOf<String?>(null) }
 
     // Category filter
-    val categories = listOf(
-        "ramadan", "dua", "quran", "prayer",
-        "makkah", "madinah", "mosque",
-        "islamic_night", "peaceful", "architecture"
-    )
-    val categoryLabels = mapOf(
-        "ramadan" to "Ramadan",
-        "dua" to "Dua",
-        "quran" to "Quran",
-        "prayer" to "Prayer",
-        "makkah" to "Makkah",
-        "madinah" to "Madinah",
-        "mosque" to "Mosque",
-        "islamic_night" to "Islamic Night",
-        "peaceful" to "Peaceful",
-        "architecture" to "Architecture"
-    )
+    var categories by remember {
+        mutableStateOf(CategoryCatalog.cached(context, CategoryCatalog.TYPE_REEL))
+    }
+    LaunchedEffect(Unit) {
+        categories = CategoryCatalog.fetch(context, CategoryCatalog.TYPE_REEL)
+    }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var shuffleTrigger by remember { mutableIntStateOf(0) }
 
@@ -382,7 +372,8 @@ fun ReelsScreen(navController: NavController) {
                         }
                     }
 
-                    items(categories) { cat ->
+                    items(categories, key = { it.slug }) { category ->
+                        val cat = category.slug
                         val isSelected = selectedCategory == cat
                         val hasReels = reels.any { it.category == cat }
                         if (!hasReels) return@items
@@ -405,7 +396,7 @@ fun ReelsScreen(navController: NavController) {
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
                             Text(
-                                categoryLabels[cat] ?: cat,
+                                category.label,
                                 color = if (isSelected) Color.Black else Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
