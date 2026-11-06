@@ -137,7 +137,14 @@ fun ProfileScreen(navController: NavController) {
     var isSaving by remember { mutableStateOf(false) }
     var profileMessage by remember { mutableStateOf<ProfileMessage?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    val cashfreeSubscription by EntitlementRepository.subscription.collectAsState()
+    val liveSubscription by EntitlementRepository.subscription.collectAsState()
+    val livePremium by EntitlementRepository.premium.collectAsState()
+    // Logout clears entitlement before navigation; keep the last plan on screen so the
+    // upsell card / "Free" badge doesn't flash while the screen is leaving.
+    var leavingSnapshot by remember {
+        mutableStateOf<Pair<CashfreeSubscriptionRepository.SubscriptionStatus?, Boolean>?>(null)
+    }
+    val cashfreeSubscription = leavingSnapshot?.first ?: liveSubscription
     val subscriptionStatus = cashfreeSubscription?.status
     val trialEnd = cashfreeSubscription?.endDate
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -150,7 +157,7 @@ fun ProfileScreen(navController: NavController) {
     var deleteStatusIsError by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
 
-    val hasPremium by EntitlementRepository.premium.collectAsState()
+    val hasPremium = leavingSnapshot?.second ?: livePremium
 
     /** Re-reads Cashfree subscription-status; [cashfreeSubscription] updates from the repository. */
     suspend fun refreshSubscriptionState() {
@@ -475,6 +482,7 @@ fun ProfileScreen(navController: NavController) {
                                 }
                                 val result = AccountDeletionApi.deleteUserData(phone, deleteOtp)
                                 if (result.isSuccess) {
+                                    leavingSnapshot = liveSubscription to livePremium
                                     AnalyticsManager.reset()
                                     SubscriptionOrchestrator.onLogout()
                                     dataStoreManager.logout()
@@ -647,6 +655,7 @@ fun ProfileScreen(navController: NavController) {
 
             ProfileDangerZoneSection(
                 onLogout = {
+                    leavingSnapshot = liveSubscription to livePremium
                     scope.launch {
                         AnalyticsManager.reset()
                         SubscriptionOrchestrator.onLogout()
