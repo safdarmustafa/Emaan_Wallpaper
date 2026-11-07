@@ -65,7 +65,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
+import androidx.compose.ui.res.stringResource
 import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.R
+import com.squarenova.emaanwallpapers.i18n.AppLanguage
+import com.squarenova.emaanwallpapers.ui.language.LanguagePickerSheet
 import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
@@ -123,6 +127,7 @@ fun ProfileScreen(navController: NavController) {
     var avatarUrl by remember { mutableStateOf<String?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
+    var showLanguageSheet by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var profileMessage by remember { mutableStateOf<ProfileMessage?>(null) }
@@ -230,6 +235,11 @@ fun ProfileScreen(navController: NavController) {
     val fullName = "${user?.first_name ?: ""} ${user?.last_name ?: ""}".trim()
     val phone = user?.phone_number.orEmpty()
     val avatarInitial = user?.first_name?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+
+    LanguagePickerSheet(
+        visible = showLanguageSheet,
+        onDismiss = { showLanguageSheet = false },
+    )
 
     if (showEditDialog) {
         EditProfileDialog(
@@ -550,34 +560,51 @@ fun ProfileScreen(navController: NavController) {
             ProfileAccountSection(
                 items = listOf(
                     ProfileAccountItem(
-                        title = "Edit Profile",
-                        subtitle = "Update your name and photo",
+                        title = stringResource(R.string.profile_language),
+                        subtitle = stringResource(
+                            if (AppLanguage.currentTag() == AppLanguage.HINDI) {
+                                R.string.language_menu_subtitle_hi
+                            } else {
+                                R.string.language_menu_subtitle_en
+                            },
+                        ),
+                        icon = Icons.Default.Language,
+                        onClick = { showLanguageSheet = true },
+                    ),
+                    ProfileAccountItem(
+                        title = stringResource(R.string.profile_edit),
+                        subtitle = stringResource(R.string.profile_edit_sub),
                         icon = Icons.Default.Person,
                         onClick = {
                             showEditDialog = true
                         },
                     ),
                     ProfileAccountItem(
-                        title = "About App",
-                        subtitle = "About Emaan Wallpapers · v${BuildConfig.VERSION_NAME}",
+                        title = stringResource(R.string.profile_about),
+                        subtitle = stringResource(R.string.profile_about_sub, BuildConfig.VERSION_NAME),
                         icon = Icons.Default.Info,
                         onClick = {
                             showAboutDialog = true
                         },
                     ),
                     ProfileAccountItem(
-                        title = "Share App",
-                        subtitle = "Invite friends to Emaan Wallpapers",
+                        title = stringResource(R.string.profile_share),
+                        subtitle = stringResource(R.string.profile_share_sub),
                         icon = Icons.Default.Share,
                         onClick = {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(
                                     Intent.EXTRA_TEXT,
-                                    "Discover beautiful Islamic wallpapers with Emaan Wallpapers.",
+                                    context.getString(R.string.profile_share_text),
                                 )
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Emaan Wallpapers"))
+                            context.startActivity(
+                                Intent.createChooser(
+                                    shareIntent,
+                                    context.getString(R.string.profile_share_chooser),
+                                ),
+                            )
                         },
                     ),
                 ),
@@ -588,7 +615,7 @@ fun ProfileScreen(navController: NavController) {
             ProfileLegalSupportSection(
                 items = listOf(
                     ProfileAccountItem(
-                        title = "Privacy Policy",
+                        title = stringResource(R.string.profile_privacy),
                         subtitle = "squarenovatech.com/privacy-policy",
                         icon = Icons.Default.Security,
                         opensExternal = true,
@@ -597,7 +624,7 @@ fun ProfileScreen(navController: NavController) {
                         },
                     ),
                     ProfileAccountItem(
-                        title = "Terms & Conditions",
+                        title = stringResource(R.string.profile_terms),
                         subtitle = "squarenovatech.com/terms-and-conditions",
                         icon = Icons.Default.Gavel,
                         opensExternal = true,
@@ -606,8 +633,8 @@ fun ProfileScreen(navController: NavController) {
                         },
                     ),
                     ProfileAccountItem(
-                        title = "Subscription Disclosure",
-                        subtitle = "1-day free trial, ₹499/month auto-renewal, refunds",
+                        title = stringResource(R.string.profile_disclosure),
+                        subtitle = stringResource(R.string.profile_disclosure_sub),
                         icon = Icons.Default.WorkspacePremium,
                         opensExternal = true,
                         onClick = {
@@ -615,7 +642,7 @@ fun ProfileScreen(navController: NavController) {
                         },
                     ),
                     ProfileAccountItem(
-                        title = "Contact Us",
+                        title = stringResource(R.string.profile_contact),
                         subtitle = LegalUrls.SUPPORT_EMAIL,
                         icon = Icons.AutoMirrored.Filled.Help,
                         onClick = {
@@ -862,7 +889,7 @@ private fun AboutAppDialog(
                         modifier = Modifier.size(24.dp),
                     )
                     Text(
-                        text = "About Emaan Wallpapers",
+                        text = stringResource(R.string.about_title),
                         color = AppTextPrimary,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
@@ -875,9 +902,7 @@ private fun AboutAppDialog(
                 )
 
                 Text(
-                    text = "Emaan Wallpapers is a premium Islamic wallpaper application designed to bring " +
-                        "inspiration, peace, and beauty to your device through carefully curated Islamic " +
-                        "wallpapers, calligraphy, architecture, and spiritual artwork.",
+                    text = stringResource(R.string.about_body_1),
                     color = AppTextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                     lineHeight = 22.sp,
@@ -886,8 +911,7 @@ private fun AboutAppDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Our mission is to help users stay connected with faith by providing meaningful " +
-                        "wallpapers that inspire remembrance, reflection, and positivity throughout the day.",
+                    text = stringResource(R.string.about_body_2),
                     color = AppTextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                     lineHeight = 22.sp,
@@ -896,8 +920,7 @@ private fun AboutAppDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Features include HD wallpapers, premium collections, secure account management, " +
-                        "and a seamless experience built for the Muslim community.",
+                    text = stringResource(R.string.about_body_3),
                     color = AppTextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                     lineHeight = 22.sp,
@@ -907,33 +930,33 @@ private fun AboutAppDialog(
 
                 AboutInfoRow(
                     icon = Icons.Default.Info,
-                    label = "Version",
+                    label = stringResource(R.string.about_version),
                     value = BuildConfig.VERSION_NAME,
                 )
                 HorizontalDivider(color = AppDivider)
                 AboutInfoRow(
                     icon = Icons.Default.Business,
-                    label = "Developer",
+                    label = stringResource(R.string.about_developer),
                     value = "Square Nova TECH",
                 )
                 HorizontalDivider(color = AppDivider)
                 AboutInfoRow(
                     icon = Icons.Default.Language,
-                    label = "Website",
+                    label = stringResource(R.string.about_website),
                     value = "squarenovatech.com",
                     onClick = { LegalUrlOpener.openWebsite(context) },
                 )
                 HorizontalDivider(color = AppDivider)
                 AboutInfoRow(
                     icon = Icons.Default.Email,
-                    label = "Support",
+                    label = stringResource(R.string.about_support),
                     value = "support@squarenovatech.com",
                     onClick = {
                         val intent = Intent(Intent.ACTION_SENDTO).apply {
                             data = Uri.parse("mailto:support@squarenovatech.com")
                             putExtra(Intent.EXTRA_SUBJECT, "Emaan Wallpapers Support")
                         }
-                        context.startActivity(Intent.createChooser(intent, "Contact support"))
+                        context.startActivity(Intent.createChooser(intent, context.getString(R.string.about_contact_chooser)))
                     },
                 )
 
@@ -945,7 +968,7 @@ private fun AboutAppDialog(
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = BrandGreen),
                 ) {
-                    Text("Close", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.about_close), color = Color.White, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

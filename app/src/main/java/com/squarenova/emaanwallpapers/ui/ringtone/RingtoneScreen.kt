@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -108,7 +109,7 @@ fun RingtoneScreen(
     var downloadSuccess by remember { mutableStateOf(false) }
     var successTitle by remember { mutableStateOf<String?>(null) }
     var showFailure by remember { mutableStateOf(false) }
-    var failureMessage by remember { mutableStateOf("Couldn't set automatically.") }
+    var failureMessage by remember { mutableStateOf("") }
 
     var pendingRingtone by remember { mutableStateOf<Ringtone?>(null) }
 
@@ -116,7 +117,7 @@ fun RingtoneScreen(
 
     fun applyRingtone(ringtone: Ringtone) {
         scope.launch {
-            processingMessage = "Setting ringtone…"
+            processingMessage = context.getString(com.squarenova.emaanwallpapers.R.string.ringtone_setting)
             val result = runCatching {
                 val file = audioDownloader.download(ringtone.audioUrl, ringtone.title)
                 downloadVersion++
@@ -127,7 +128,7 @@ fun RingtoneScreen(
             if (result.isSuccess) {
                 successTitle = ringtone.title
             } else {
-                failureMessage = "Couldn't set automatically."
+                failureMessage = context.getString(com.squarenova.emaanwallpapers.R.string.ringtone_set_failed)
                 showFailure = true
             }
         }
@@ -135,14 +136,14 @@ fun RingtoneScreen(
 
     fun onSetRingtone(ringtone: Ringtone) {
         scope.launch {
-            processingMessage = "Preparing ringtone…"
+            processingMessage = context.getString(com.squarenova.emaanwallpapers.R.string.ringtone_preparing)
             val prepared = runCatching {
                 audioDownloader.download(ringtone.audioUrl, ringtone.title)
             }
             processingMessage = null
 
             if (prepared.isFailure) {
-                failureMessage = "Download failed."
+                failureMessage = context.getString(com.squarenova.emaanwallpapers.R.string.ringtone_download_failed)
                 showFailure = true
                 return@launch
             }
@@ -194,8 +195,10 @@ fun RingtoneScreen(
         categories.filter { cat -> ringtones.any { CategoryCatalog.matches(it.category, cat.slug) } }
     }
 
+    val language = com.squarenova.emaanwallpapers.i18n.AppLanguage.currentTag()
     fun labelFor(ringtone: Ringtone): String =
-        categories.firstOrNull { CategoryCatalog.matches(ringtone.category, it.slug) }?.label
+        categories.firstOrNull { CategoryCatalog.matches(ringtone.category, it.slug) }
+            ?.displayLabel(language)
             ?: ringtone.category
 
     LaunchedEffect(visibleCategories) {
@@ -247,7 +250,7 @@ fun RingtoneScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 4.dp),
-                    placeholder = { Text("Search adhans…", color = HeaderSubtitle) },
+                    placeholder = { Text(stringResource(com.squarenova.emaanwallpapers.R.string.ringtone_search), color = HeaderSubtitle) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                     leadingIcon = {
@@ -289,11 +292,13 @@ fun RingtoneScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (searchQuery.isBlank() && selectedCategory == null) {
-                                "No ringtones available"
-                            } else {
-                                "No results found"
-                            },
+                            text = stringResource(
+                                if (searchQuery.isBlank() && selectedCategory == null) {
+                                    com.squarenova.emaanwallpapers.R.string.ringtone_none
+                                } else {
+                                    com.squarenova.emaanwallpapers.R.string.ringtone_no_results
+                                }
+                            ),
                             color = HeaderSubtitle
                         )
                     }
@@ -351,7 +356,7 @@ fun RingtoneScreen(
                                 },
                                 onDownloadClick = {
                                     scope.launch {
-                                        processingMessage = "Downloading…"
+                                        processingMessage = context.getString(com.squarenova.emaanwallpapers.R.string.ringtone_downloading)
                                         val result = runCatching {
                                             audioDownloader.download(
                                                 url = ringtone.audioUrl,
@@ -363,7 +368,7 @@ fun RingtoneScreen(
                                             downloadVersion++
                                             downloadSuccess = true
                                         } else {
-                                            failureMessage = "Download failed."
+                                            failureMessage = context.getString(com.squarenova.emaanwallpapers.R.string.ringtone_download_failed)
                                             showFailure = true
                                         }
                                     }
@@ -419,7 +424,7 @@ private fun RingtoneCategoryChips(
     ) {
         item(key = "all") {
             RingtoneChip(
-                label = "All",
+                label = stringResource(com.squarenova.emaanwallpapers.R.string.chip_all),
                 selected = selectedCategory == null,
                 onClick = { onSelect(null) }
             )
@@ -427,7 +432,7 @@ private fun RingtoneCategoryChips(
         items(categories, key = { it.slug }) { category ->
             val isSelected = selectedCategory == category.slug
             RingtoneChip(
-                label = category.label,
+                label = category.displayLabel(com.squarenova.emaanwallpapers.i18n.AppLanguage.currentTag()),
                 selected = isSelected,
                 onClick = { onSelect(if (isSelected) null else category.slug) }
             )
@@ -473,14 +478,14 @@ private fun RingtoneHeader(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Ringtones",
+                text = stringResource(com.squarenova.emaanwallpapers.R.string.ringtone_title),
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = HeaderTitle
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "Premium Islamic ringtones for your device",
+                text = stringResource(com.squarenova.emaanwallpapers.R.string.ringtone_subtitle),
                 fontSize = 14.sp,
                 color = HeaderSubtitle
             )

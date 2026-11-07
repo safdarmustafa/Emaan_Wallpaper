@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -286,14 +287,14 @@ fun ReelsScreen(navController: NavController) {
                     Text("🎬", fontSize = 72.sp)
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        "No reels yet",
+                        stringResource(R.string.empty_reels),
                         color = Color.White,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Coming soon insha'Allah",
+                        stringResource(R.string.empty_coming_soon),
                         color = Color.White.copy(alpha = 0.6f),
                         fontSize = 15.sp
                     )
@@ -396,7 +397,7 @@ fun ReelsScreen(navController: NavController) {
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
                             Text(
-                                category.label,
+                                category.displayLabel(com.squarenova.emaanwallpapers.i18n.AppLanguage.currentTag()),
                                 color = if (isSelected) Color.Black else Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
@@ -414,7 +415,7 @@ fun ReelsScreen(navController: NavController) {
                         Text("🎬", fontSize = 56.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            "No reels in this category",
+                            stringResource(R.string.empty_reels_category),
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold
@@ -709,7 +710,7 @@ fun ReelItem(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("Share", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(com.squarenova.emaanwallpapers.R.string.btn_share), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
 
             // Download
@@ -754,7 +755,7 @@ fun ReelItem(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(6.dp))
-                        Text("Saved!", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(com.squarenova.emaanwallpapers.R.string.btn_saved), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                     DownloadState.IDLE -> {
                         Icon(
@@ -764,7 +765,7 @@ fun ReelItem(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(6.dp))
-                        Text("Download", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(com.squarenova.emaanwallpapers.R.string.btn_download), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

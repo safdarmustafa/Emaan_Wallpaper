@@ -31,6 +31,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.squarenova.emaanwallpapers.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -48,10 +50,10 @@ fun ContactUsScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Contact Us", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.contact_title), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.contact_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -76,19 +78,19 @@ fun ContactUsScreen(navController: NavController) {
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        "We're here to help",
+                        stringResource(R.string.contact_help),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = AppTextPrimary,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        LegalUrls.CONTACT_INTRO,
+                        stringResource(R.string.contact_intro),
                         style = MaterialTheme.typography.bodyMedium,
                         color = AppTextSecondary,
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Email", fontWeight = FontWeight.SemiBold, color = ProfileEmerald)
+                    Text(stringResource(R.string.contact_email), fontWeight = FontWeight.SemiBold, color = ProfileEmerald)
                     Text(LegalUrls.SUPPORT_EMAIL, color = AppTextPrimary)
                 }
             }
@@ -101,7 +103,7 @@ fun ContactUsScreen(navController: NavController) {
             ) {
                 Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("Email Support", color = Color.White)
+                Text(stringResource(R.string.contact_email_support), color = Color.White)
             }
 
             OutlinedButton(
@@ -111,7 +113,7 @@ fun ContactUsScreen(navController: NavController) {
             ) {
                 Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("Visit Website")
+                Text(stringResource(R.string.contact_website))
             }
 
             OutlinedButton(
@@ -121,7 +123,7 @@ fun ContactUsScreen(navController: NavController) {
             ) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("Privacy Policy")
+                Text(stringResource(R.string.profile_privacy))
             }
 
             OutlinedButton(
@@ -131,7 +133,7 @@ fun ContactUsScreen(navController: NavController) {
             ) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("Terms & Conditions")
+                Text(stringResource(R.string.profile_terms))
             }
         }
     }

@@ -2,6 +2,7 @@ package com.squarenova.emaanwallpapers.network
 
 import android.content.Context
 import android.util.Log
+import com.squarenova.emaanwallpapers.i18n.localizedLabel
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.Serializable
@@ -15,12 +16,16 @@ private const val TAG = "CategoryCatalog"
 data class ContentCategory(
     val slug: String,
     val label: String,
-)
+    val labelHi: String? = null,
+) {
+    fun displayLabel(language: String?): String = localizedLabel(label, labelHi, language)
+}
 
 @Serializable
 private data class CategoryRow(
     val name: String,
     val label: String? = null,
+    val label_hi: String? = null,
     val sort_order: Int = 0,
 )
 
@@ -41,31 +46,31 @@ object CategoryCatalog {
     /** Used only when the app has never reached the server (first launch offline). */
     private val defaults: Map<String, List<ContentCategory>> = mapOf(
         TYPE_WALLPAPER to listOf(
-            ContentCategory("kaaba", "Kaaba"),
-            ContentCategory("madinah", "Madinah"),
-            ContentCategory("quran", "Quran"),
-            ContentCategory("mosque", "Mosque"),
-            ContentCategory("islamic_quotes", "Islamic Quotes"),
-            ContentCategory("ramadan", "Ramadan"),
-            ContentCategory("allah", "Allah"),
-            ContentCategory("general", "General"),
+            ContentCategory("kaaba", "Kaaba", "काबा"),
+            ContentCategory("madinah", "Madinah", "मदीना"),
+            ContentCategory("quran", "Quran", "कुरान"),
+            ContentCategory("mosque", "Mosque", "मस्जिद"),
+            ContentCategory("islamic_quotes", "Islamic Quotes", "इस्लामिक कोट्स"),
+            ContentCategory("ramadan", "Ramadan", "रमज़ान"),
+            ContentCategory("allah", "Allah", "अल्लाह"),
+            ContentCategory("general", "General", "सामान्य"),
         ),
         TYPE_REEL to listOf(
-            ContentCategory("ramadan", "Ramadan"),
-            ContentCategory("dua", "Dua"),
-            ContentCategory("quran", "Quran"),
-            ContentCategory("prayer", "Prayer"),
-            ContentCategory("makkah", "Makkah"),
-            ContentCategory("madinah", "Madinah"),
-            ContentCategory("mosque", "Mosque"),
-            ContentCategory("islamic_night", "Islamic Night"),
-            ContentCategory("peaceful", "Peaceful"),
-            ContentCategory("architecture", "Architecture"),
+            ContentCategory("ramadan", "Ramadan", "रमज़ान"),
+            ContentCategory("dua", "Dua", "दुआ"),
+            ContentCategory("quran", "Quran", "कुरान"),
+            ContentCategory("prayer", "Prayer", "नमाज़"),
+            ContentCategory("makkah", "Makkah", "मक्का"),
+            ContentCategory("madinah", "Madinah", "मदीना"),
+            ContentCategory("mosque", "Mosque", "मस्जिद"),
+            ContentCategory("islamic_night", "Islamic Night", "इस्लामिक रात"),
+            ContentCategory("peaceful", "Peaceful", "सुखद"),
+            ContentCategory("architecture", "Architecture", "आर्किटेक्चर"),
         ),
         TYPE_RINGTONE to listOf(
-            ContentCategory("nasheed", "Nasheed"),
-            ContentCategory("islamic", "Islamic"),
-            ContentCategory("adhan", "Adhan"),
+            ContentCategory("nasheed", "Nasheed", "नशीद"),
+            ContentCategory("islamic", "Islamic", "इस्लामिक"),
+            ContentCategory("adhan", "Adhan", "अज़ान"),
         ),
     )
 
@@ -99,10 +104,12 @@ object CategoryCatalog {
                 .mapNotNull { row ->
                     val slug = row.name.trim().lowercase()
                     if (slug.isEmpty()) return@mapNotNull null
+                    val english = row.label?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: slug.replace('_', ' ').replaceFirstChar { it.uppercase() }
                     ContentCategory(
                         slug = slug,
-                        label = row.label?.trim()?.takeIf { it.isNotEmpty() }
-                            ?: slug.replace('_', ' ').replaceFirstChar { it.uppercase() },
+                        label = english,
+                        labelHi = row.label_hi?.trim()?.takeIf { it.isNotEmpty() },
                     )
                 }
                 .distinctBy { it.slug }

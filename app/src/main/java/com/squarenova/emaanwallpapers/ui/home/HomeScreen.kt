@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -553,7 +554,7 @@ fun HomeScreen(navController: NavController) {
                             },
                             label = {
                                 Text(
-                                    category.label,
+                                    category.displayLabel(com.squarenova.emaanwallpapers.i18n.AppLanguage.currentTag()),
                                     fontSize = 12.sp,
                                     color = if (isSelected) Color.White else AppTextPrimary
                                 )
@@ -613,7 +614,7 @@ fun HomeScreen(navController: NavController) {
                     ) {
                         if (activeFilter == WallpaperFilter.LIVE) {
                             Text(
-                                "No live wallpapers in this view",
+                                stringResource(com.squarenova.emaanwallpapers.R.string.empty_live),
                                 color = AppTextSecondary,
                                 fontSize = 14.sp
                             )
@@ -621,9 +622,9 @@ fun HomeScreen(navController: NavController) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("🕌", fontSize = 48.sp)
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Text("No wallpapers yet", color = AppTextPrimary, fontSize = 16.sp)
+                                Text(stringResource(com.squarenova.emaanwallpapers.R.string.empty_wallpapers), color = AppTextPrimary, fontSize = 16.sp)
                                 Text(
-                                    "Coming soon insha'Allah",
+                                    stringResource(com.squarenova.emaanwallpapers.R.string.empty_coming_soon),
                                     color = AppTextSecondary,
                                     fontSize = 13.sp
                                 )
@@ -671,9 +672,13 @@ fun HomeScreen(navController: NavController) {
                                             val result = setWallpaper(context, item.wallpaper.url)
                                             settingWallpaperUrl = null
                                             snackbarIsSuccess = result.isSuccess
-                                            snackbarMessage = if (result.isSuccess)
-                                                "Wallpaper set successfully ✅"
-                                            else "Failed to set wallpaper ❌"
+                                            snackbarMessage = context.getString(
+                                                if (result.isSuccess) {
+                                                    com.squarenova.emaanwallpapers.R.string.wallpaper_set_ok
+                                                } else {
+                                                    com.squarenova.emaanwallpapers.R.string.wallpaper_set_fail
+                                                }
+                                            )
                                         }
                                     },
                                     onShareWhatsApp = {
@@ -893,7 +898,7 @@ fun LiveWallpaperCard(
                     modifier = Modifier.height(42.dp)
                 ) {
                     Text(
-                        "Set live wallpaper",
+                        stringResource(com.squarenova.emaanwallpapers.R.string.btn_set_live),
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
@@ -988,7 +993,7 @@ fun WallpaperCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        "Share",
+                        stringResource(com.squarenova.emaanwallpapers.R.string.btn_share),
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
@@ -1017,14 +1022,14 @@ fun WallpaperCard(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Setting...",
+                            stringResource(com.squarenova.emaanwallpapers.R.string.btn_setting_wallpaper),
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
                         )
                     } else {
                         Text(
-                            "Set wallpaper",
+                            stringResource(com.squarenova.emaanwallpapers.R.string.btn_set_wallpaper),
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp

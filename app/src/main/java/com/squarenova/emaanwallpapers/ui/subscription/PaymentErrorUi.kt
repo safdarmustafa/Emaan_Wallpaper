@@ -1,7 +1,9 @@
 package com.squarenova.emaanwallpapers.ui.subscription
 
 import android.util.Log
+import androidx.compose.ui.res.stringResource
 import com.squarenova.emaanwallpapers.BuildConfig
+import com.squarenova.emaanwallpapers.R
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -67,25 +69,20 @@ object PaymentErrors {
         return PaymentErrorType.UNKNOWN_ERROR
     }
 
-    fun title(type: PaymentErrorType): String = when (type) {
-        PaymentErrorType.PAYMENT_CANCELLED -> "Payment रद्द हो गया"
-        PaymentErrorType.MANDATE_NOT_APPROVED -> "AutoPay approve नहीं हुआ"
-        PaymentErrorType.PAYMENT_FAILED -> "Payment पूरा नहीं हुआ"
-        PaymentErrorType.NETWORK_ERROR -> "Internet की समस्या"
-        PaymentErrorType.UNKNOWN_ERROR -> "कुछ गलत हो गया"
+    fun titleRes(type: PaymentErrorType): Int = when (type) {
+        PaymentErrorType.PAYMENT_CANCELLED -> R.string.pay_cancelled_title
+        PaymentErrorType.MANDATE_NOT_APPROVED -> R.string.pay_mandate_title
+        PaymentErrorType.PAYMENT_FAILED -> R.string.pay_failed_title
+        PaymentErrorType.NETWORK_ERROR -> R.string.pay_network_title
+        PaymentErrorType.UNKNOWN_ERROR -> R.string.pay_unknown_title
     }
 
-    fun message(type: PaymentErrorType): String = when (type) {
-        PaymentErrorType.PAYMENT_CANCELLED ->
-            "आपने payment screen बंद कर दी। कोई पैसा नहीं कटा। तैयार होने पर Retry दबाएँ।"
-        PaymentErrorType.MANDATE_NOT_APPROVED ->
-            "आपकी UPI app में AutoPay approve नहीं हुआ। Subscription पूरा करने के लिए mandate approve करें।"
-        PaymentErrorType.PAYMENT_FAILED ->
-            "Payment पूरा नहीं हो सका। अपनी UPI app चेक करें या दूसरा तरीका आज़माएँ।"
-        PaymentErrorType.NETWORK_ERROR ->
-            "कृपया अपना internet connection चेक करके दोबारा कोशिश करें।"
-        PaymentErrorType.UNKNOWN_ERROR ->
-            "कुछ अप्रत्याशित समस्या आई। कृपया थोड़ी देर बाद दोबारा कोशिश करें।"
+    fun messageRes(type: PaymentErrorType): Int = when (type) {
+        PaymentErrorType.PAYMENT_CANCELLED -> R.string.pay_cancelled_body
+        PaymentErrorType.MANDATE_NOT_APPROVED -> R.string.pay_mandate_body
+        PaymentErrorType.PAYMENT_FAILED -> R.string.pay_failed_body
+        PaymentErrorType.NETWORK_ERROR -> R.string.pay_network_body
+        PaymentErrorType.UNKNOWN_ERROR -> R.string.pay_unknown_body
     }
 
     fun logFailure(
@@ -147,10 +144,10 @@ fun PaymentErrorAlertDialog(
     val current = state ?: return
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(PaymentErrors.title(current.type)) },
+        title = { Text(stringResource(PaymentErrors.titleRes(current.type))) },
         text = {
             Text(
-                text = PaymentErrors.message(current.type),
+                text = stringResource(PaymentErrors.messageRes(current.type)),
                 style = MaterialTheme.typography.bodyMedium,
             )
         },
@@ -161,12 +158,12 @@ fun PaymentErrorAlertDialog(
                     current.onRetry()
                 },
             ) {
-                Text("Retry")
+                Text(stringResource(R.string.action_retry))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("रद्द करें")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )

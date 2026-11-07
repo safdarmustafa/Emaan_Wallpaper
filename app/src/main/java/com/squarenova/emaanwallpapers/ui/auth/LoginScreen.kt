@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -45,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -52,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -72,6 +75,7 @@ import com.squarenova.emaanwallpapers.theme.ProfileEmerald
 import com.squarenova.emaanwallpapers.theme.ProfileEmeraldLight
 import com.squarenova.emaanwallpapers.theme.ProfileGold
 import com.squarenova.emaanwallpapers.theme.ProfileGoldLight
+import com.squarenova.emaanwallpapers.ui.language.LoginLanguageButton
 import com.squarenova.emaanwallpapers.ui.legal.LegalUrlOpener
 import com.squarenova.emaanwallpapers.util.SecureLog
 import kotlinx.coroutines.launch
@@ -139,14 +143,14 @@ fun LoginScreen(navController: NavController) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = "Welcome",
+                        text = stringResource(R.string.login_welcome),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = ProfileEmerald,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Sign in with your mobile number",
+                        text = stringResource(R.string.login_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = ProfileEmerald.copy(alpha = 0.72f),
                         textAlign = TextAlign.Center,
@@ -167,7 +171,7 @@ fun LoginScreen(navController: NavController) {
                         },
                         label = {
                             Text(
-                                "Mobile number",
+                                stringResource(R.string.login_phone_label),
                                 color = ProfileEmerald.copy(alpha = 0.65f),
                             )
                         },
@@ -214,7 +218,7 @@ fun LoginScreen(navController: NavController) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "We send a one-time code via SMS. Standard message rates may apply.",
+                        text = stringResource(R.string.login_sms_note),
                         style = MaterialTheme.typography.labelSmall,
                         color = ProfileEmerald.copy(alpha = 0.62f),
                         lineHeight = 15.sp,
@@ -241,7 +245,7 @@ fun LoginScreen(navController: NavController) {
                             val cleanNumber = phoneNumber.filter { it.isDigit() }
 
                             if (cleanNumber.length != 10) {
-                                errorMessage = "Enter valid 10 digit number"
+                                errorMessage = context.getString(R.string.login_invalid_phone)
                                 return@Button
                             }
 
@@ -255,11 +259,11 @@ fun LoginScreen(navController: NavController) {
                                         navController.navigate("otp/$cleanNumber")
                                     } else {
                                         errorMessage = result.exceptionOrNull()?.message
-                                            ?: "Failed to send OTP"
+                                            ?: context.getString(R.string.login_otp_failed)
                                     }
                                 } catch (e: Exception) {
                                     SecureLog.e("LOGIN", "sendOtp failed", e)
-                                    errorMessage = "Network error"
+                                    errorMessage = context.getString(R.string.login_network_error)
                                 } finally {
                                     isLoading = false
                                 }
@@ -289,7 +293,7 @@ fun LoginScreen(navController: NavController) {
                             )
                         } else {
                             Text(
-                                text = "Continue",
+                                text = stringResource(R.string.login_continue),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
                             )
@@ -315,6 +319,14 @@ fun LoginScreen(navController: NavController) {
 
             LoginTrustIndicators()
         }
+
+        LoginLanguageButton(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .zIndex(2f)
+                .statusBarsPadding()
+                .padding(top = 12.dp, end = 16.dp),
+        )
     }
 }
 
@@ -337,7 +349,7 @@ private fun LoginBrandHeader() {
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = "Emaan Wallpapers",
+                contentDescription = stringResource(R.string.app_name),
                 modifier = Modifier.size(52.dp),
             )
         }
@@ -345,7 +357,7 @@ private fun LoginBrandHeader() {
         Spacer(modifier = Modifier.height(14.dp))
 
         Text(
-            text = "Emaan Wallpapers",
+            text = stringResource(R.string.app_name),
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
@@ -356,7 +368,7 @@ private fun LoginBrandHeader() {
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "Bring Noor to Your Screen",
+            text = stringResource(R.string.login_tagline),
             fontSize = 14.sp,
             fontWeight = FontWeight.Normal,
             color = ProfileGoldLight.copy(alpha = 0.95f),
@@ -381,7 +393,7 @@ private fun LoginLegalConsentText(
     Text(
         text = buildAnnotatedString {
             withStyle(SpanStyle(color = bodyColor, fontSize = 11.sp)) {
-                append("By continuing, you agree to our ")
+                append(stringResource(R.string.login_consent_prefix))
             }
             withLink(
                 LinkAnnotation.Clickable(
@@ -390,10 +402,10 @@ private fun LoginLegalConsentText(
                     linkInteractionListener = { onTermsClick() },
                 ),
             ) {
-                append("Terms")
+                append(stringResource(R.string.login_consent_terms))
             }
             withStyle(SpanStyle(color = bodyColor, fontSize = 11.sp)) {
-                append(" and ")
+                append(stringResource(R.string.login_consent_and))
             }
             withLink(
                 LinkAnnotation.Clickable(
@@ -402,7 +414,7 @@ private fun LoginLegalConsentText(
                     linkInteractionListener = { onPrivacyClick() },
                 ),
             ) {
-                append("Privacy Policy")
+                append(stringResource(R.string.login_consent_privacy))
             }
             withStyle(SpanStyle(color = bodyColor, fontSize = 11.sp)) {
                 append(".")
@@ -426,15 +438,15 @@ private fun LoginTrustIndicators() {
     ) {
         LoginTrustChip(
             icon = Icons.Default.VerifiedUser,
-            label = "Secure OTP",
+            label = stringResource(R.string.login_trust_otp),
         )
         LoginTrustChip(
             icon = Icons.Default.Speed,
-            label = "Fast Login",
+            label = stringResource(R.string.login_trust_fast),
         )
         LoginTrustChip(
             icon = Icons.Default.Shield,
-            label = "Privacy Protected",
+            label = stringResource(R.string.login_trust_privacy),
         )
     }
 }

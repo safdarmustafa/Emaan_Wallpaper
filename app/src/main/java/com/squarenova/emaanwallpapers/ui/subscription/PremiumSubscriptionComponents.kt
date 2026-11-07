@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,7 +99,7 @@ fun PremiumGradientCtaButton(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "कृपया प्रतीक्षा करें…",
+                    text = stringResource(com.squarenova.emaanwallpapers.R.string.premium_wait),
                     fontWeight = FontWeight.Medium,
                     fontSize = 15.sp,
                     color = Color.White,
@@ -140,7 +141,7 @@ fun TrialActivatedSuccessOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Premium शुरू हो गया",
+                    text = stringResource(com.squarenova.emaanwallpapers.R.string.premium_started),
                     color = PremiumSubscriptionColors.TextPrimary,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -148,7 +149,7 @@ fun TrialActivatedSuccessOverlay(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "अब आप Premium content का आनंद ले सकते हैं।",
+                    text = stringResource(com.squarenova.emaanwallpapers.R.string.premium_started_body),
                     color = PremiumSubscriptionColors.TextSecondary,
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
@@ -156,7 +157,7 @@ fun TrialActivatedSuccessOverlay(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 PremiumGradientCtaButton(
-                    text = "Premium जारी रखें",
+                    text = stringResource(com.squarenova.emaanwallpapers.R.string.premium_continue),
                     onClick = onContinue,
                     enabled = true,
                     loading = false,

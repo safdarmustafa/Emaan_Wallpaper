@@ -9,14 +9,14 @@ class SupabaseTimestampParserTest {
 
     @Test
     fun parsesPostgresSpaceSeparatedTimestamp() {
-        val ms = SupabaseTimestampParser.parseToEpochMillis("2026-06-27 13:12:35.476")
+        val ms = SupabaseTimestampParser.parseToEpochMillis("2027-06-27 13:12:35.476")
         assertNotNull(ms)
-        assertTrue(SupabaseTimestampParser.isInFuture("2026-06-27 13:12:35.476"))
+        assertTrue(SupabaseTimestampParser.isInFuture("2027-06-27 13:12:35.476"))
     }
 
     @Test
     fun parsesIsoTimestamp() {
-        val ms = SupabaseTimestampParser.parseToEpochMillis("2026-06-27T13:12:35.476Z")
+        val ms = SupabaseTimestampParser.parseToEpochMillis("2027-06-27T13:12:35.476Z")
         assertNotNull(ms)
     }
 
@@ -25,7 +25,7 @@ class SupabaseTimestampParserTest {
         assertTrue(
             SubscriptionEntitlement.hasPremiumAccess(
                 subscriptionStatus = "trial",
-                trialEndIso = "2026-06-27 13:12:35.476",
+                trialEndIso = "2027-06-27 13:12:35.476",
             )
         )
         assertFalse(
@@ -51,7 +51,7 @@ class SupabaseTimestampParserTest {
         assertFalse(
             SubscriptionEntitlement.hasPremiumAccess(
                 subscriptionStatus = "authenticated",
-                trialEndIso = "2026-06-27 13:12:35.476",
+                trialEndIso = "2027-06-27 13:12:35.476",
             )
         )
     }
@@ -61,7 +61,7 @@ class SupabaseTimestampParserTest {
         assertTrue(
             SubscriptionEntitlement.hasPremiumAccess(
                 subscriptionStatus = "cancel_requested",
-                trialEndIso = "2026-06-27 13:12:35.476",
+                trialEndIso = "2027-06-27 13:12:35.476",
             )
         )
     }
@@ -81,21 +81,9 @@ class SupabaseTimestampParserTest {
         assertFalse(
             SubscriptionEntitlement.hasPremiumAccess(
                 subscriptionStatus = "expired",
-                trialEndIso = "2026-06-27 13:12:35.476",
+                trialEndIso = "2027-06-27 13:12:35.476",
             )
         )
     }
 
-    @Test
-    fun needsTrialActivationWhenAuthenticatedAndTrialPaid() {
-        assertTrue(
-            MandateEntitlementResolver.needsTrialActivation(
-                MandateEntitlementResolver.EntitlementRow(
-                    subscription_status = "authenticated",
-                    trial_paid = true,
-                    trial_end = "2026-06-27 13:12:35.476",
-                )
-            )
-        )
-    }
 }

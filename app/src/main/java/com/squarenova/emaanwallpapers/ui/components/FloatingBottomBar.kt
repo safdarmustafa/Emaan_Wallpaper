@@ -44,8 +44,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.squarenova.emaanwallpapers.R
 import androidx.navigation.NavController
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.outlined.MusicNote
@@ -66,21 +68,21 @@ fun FloatingBottomBar(
     val items = listOf(
         FloatingNavItem(
             "home",
-            "Wallpapers",
+            stringResource(R.string.nav_wallpapers),
             Icons.Filled.Home,
             Icons.Outlined.Home
         ),
 
         FloatingNavItem(
             "reels",
-            "Reels",
+            stringResource(R.string.nav_reels),
             Icons.Filled.Star,
             Icons.Outlined.Star
         ),
 
         FloatingNavItem(
             "ringtone",
-            "Ringtone",
+            stringResource(R.string.nav_ringtones),
             Icons.Filled.MusicNote,
             Icons.Outlined.MusicNote
         )

@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -301,7 +302,7 @@ private val ProfileStatusSetup = Color(0xFF2563EB)
 
 /** Display-only labels and chip colors for [ProfileSubscriptionCard]. */
 private data class SubscriptionCardDisplay(
-    val statusLabel: String,
+    @androidx.annotation.StringRes val statusLabel: Int,
     val statusAccent: Color,
     val statusContainer: Color,
 )
@@ -315,43 +316,43 @@ private fun resolveSubscriptionCardDisplay(
     val trialActive = SupabaseTimestampParser.isInFuture(trialEndIso)
     return when {
         status == "trial" && trialActive -> SubscriptionCardDisplay(
-            statusLabel = "Free Trial Active",
+            statusLabel = com.squarenova.emaanwallpapers.R.string.plan_trial,
             statusAccent = ProfileStatusTrial,
             statusContainer = ProfileStatusTrial.copy(alpha = 0.12f),
         )
         status == "active" -> SubscriptionCardDisplay(
-            statusLabel = "Premium Active",
+            statusLabel = com.squarenova.emaanwallpapers.R.string.plan_active,
             statusAccent = ProfileStatusPremium,
             statusContainer = ProfileStatusPremium.copy(alpha = 0.12f),
         )
         (status == "cancel_requested" || status == "cancelled") && hasPremium && trialActive ->
             SubscriptionCardDisplay(
-                statusLabel = "Ending Soon",
+                statusLabel = com.squarenova.emaanwallpapers.R.string.plan_ending,
                 statusAccent = ProfileStatusEnding,
                 statusContainer = ProfileStatusEnding.copy(alpha = 0.12f),
             )
         status == "authenticated" || status == "created" -> SubscriptionCardDisplay(
-            statusLabel = "Setting Up AutoPay",
+            statusLabel = com.squarenova.emaanwallpapers.R.string.plan_setup,
             statusAccent = ProfileStatusSetup,
             statusContainer = ProfileStatusSetup.copy(alpha = 0.12f),
         )
         status == "pending" -> SubscriptionCardDisplay(
-            statusLabel = "Waiting for Confirmation",
+            statusLabel = com.squarenova.emaanwallpapers.R.string.plan_waiting,
             statusAccent = ProfileStatusSetup,
             statusContainer = ProfileStatusSetup.copy(alpha = 0.12f),
         )
         status == "expired" || (status == "trial" && !trialActive) -> SubscriptionCardDisplay(
-            statusLabel = "Expired",
+            statusLabel = com.squarenova.emaanwallpapers.R.string.plan_expired,
             statusAccent = ProfileStatusExpired,
             statusContainer = ProfileStatusExpired.copy(alpha = 0.12f),
         )
         hasPremium -> SubscriptionCardDisplay(
-            statusLabel = "Premium Active",
+            statusLabel = com.squarenova.emaanwallpapers.R.string.plan_active,
             statusAccent = ProfileStatusPremium,
             statusContainer = ProfileStatusPremium.copy(alpha = 0.12f),
         )
         else -> SubscriptionCardDisplay(
-            statusLabel = "Setting Up AutoPay",
+            statusLabel = com.squarenova.emaanwallpapers.R.string.plan_setup,
             statusAccent = ProfileStatusSetup,
             statusContainer = ProfileStatusSetup.copy(alpha = 0.12f),
         )
@@ -414,14 +415,14 @@ fun ProfileSubscriptionCard(
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Premium Membership",
+                        text = stringResource(com.squarenova.emaanwallpapers.R.string.plan_membership),
                         style = MaterialTheme.typography.labelMedium,
                         color = AppTextSecondary,
                         fontWeight = FontWeight.Medium,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     ProfileStatusChip(
-                        text = display.statusLabel,
+                        text = stringResource(display.statusLabel),
                         accent = display.statusAccent,
                         container = display.statusContainer,
                     )
@@ -435,20 +436,20 @@ fun ProfileSubscriptionCard(
             when {
                 isTrialActive -> {
                     ProfileSubscriptionDetailRow(
-                        label = "Trial Ends",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_trial_ends),
                         value = trialEndFormatted ?: "—",
                         icon = Icons.Default.CalendarToday,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ProfileSubscriptionDetailRow(
-                        label = "Next Renewal",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_next_renewal),
                         value = trialEndFormatted ?: "—",
                         icon = Icons.Default.CalendarToday,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ProfileSubscriptionDetailRow(
-                        label = "Auto Renewal",
-                        value = "On",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_auto_renewal),
+                        value = stringResource(com.squarenova.emaanwallpapers.R.string.plan_on),
                         icon = Icons.Default.Autorenew,
                         valueColor = ProfileStatusPremium,
                     )
@@ -456,43 +457,42 @@ fun ProfileSubscriptionCard(
 
                 isEndingSoonWithAccess -> {
                     ProfileSubscriptionDetailRow(
-                        label = "Access Until",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_access_until),
                         value = trialEndFormatted ?: "—",
                         icon = Icons.Default.CalendarToday,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ProfileSubscriptionDetailRow(
-                        label = "Auto Renewal",
-                        value = "Off",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_auto_renewal),
+                        value = stringResource(com.squarenova.emaanwallpapers.R.string.plan_off),
                         icon = Icons.Default.Cancel,
                         valueColor = ProfileStatusExpired,
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     ProfileSubscriptionInfoNote(
-                        text = buildString {
-                            append("You won't be charged again. Premium access continues until ")
-                            append(trialEndFormatted ?: "your trial ends")
-                            append('.')
-                        },
+                        text = stringResource(
+                            com.squarenova.emaanwallpapers.R.string.plan_ending_note,
+                            trialEndFormatted ?: stringResource(com.squarenova.emaanwallpapers.R.string.plan_ending_fallback),
+                        ),
                     )
                 }
 
                 isActivePremium -> {
                     ProfileSubscriptionDetailRow(
-                        label = "Next Renewal",
-                        value = trialEndFormatted ?: "Monthly · ₹499",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_next_renewal),
+                        value = trialEndFormatted ?: stringResource(com.squarenova.emaanwallpapers.R.string.plan_monthly),
                         icon = Icons.Default.CalendarToday,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ProfileSubscriptionDetailRow(
-                        label = "Plan",
-                        value = "₹499 / month",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_name),
+                        value = stringResource(com.squarenova.emaanwallpapers.R.string.plan_price),
                         icon = Icons.Default.WorkspacePremium,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     ProfileSubscriptionDetailRow(
-                        label = "Auto Renewal",
-                        value = "On",
+                        label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_auto_renewal),
+                        value = stringResource(com.squarenova.emaanwallpapers.R.string.plan_on),
                         icon = Icons.Default.Autorenew,
                         valueColor = ProfileStatusPremium,
                     )
@@ -500,7 +500,7 @@ fun ProfileSubscriptionCard(
 
                 isExpired -> {
                     ProfileSubscriptionInfoNote(
-                        text = "Premium access has ended.",
+                        text = stringResource(com.squarenova.emaanwallpapers.R.string.plan_ended),
                         icon = Icons.Default.Info,
                         accent = ProfileStatusExpired,
                     )
@@ -509,7 +509,7 @@ fun ProfileSubscriptionCard(
                 else -> {
                     if (!trialEndFormatted.isNullOrBlank() && hasPremium) {
                         ProfileSubscriptionDetailRow(
-                            label = "Access Until",
+                            label = stringResource(com.squarenova.emaanwallpapers.R.string.plan_access_until),
                             value = trialEndFormatted,
                             icon = Icons.Default.CalendarToday,
                         )
@@ -539,7 +539,7 @@ fun ProfileSubscriptionCard(
                 ),
             ) {
                 Text(
-                    text = "Manage Subscription",
+                    text = stringResource(com.squarenova.emaanwallpapers.R.string.btn_manage_subscription),
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -812,7 +812,7 @@ fun ProfilePremiumUpsellCard(
                     ),
                 ) {
                     Text(
-                        text = "Upgrade to Premium",
+                        text = stringResource(com.squarenova.emaanwallpapers.R.string.btn_upgrade),
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -827,7 +827,7 @@ fun ProfileDangerZoneSection(
     onDeleteAccount: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ProfileSectionTitle(title = "Danger Zone", modifier = modifier)
+    ProfileSectionTitle(title = stringResource(com.squarenova.emaanwallpapers.R.string.btn_danger_zone), modifier = modifier)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -839,8 +839,8 @@ fun ProfileDangerZoneSection(
     ) {
         Column {
             ProfileDangerRow(
-                title = "Logout",
-                subtitle = "Sign out of this device",
+                title = stringResource(com.squarenova.emaanwallpapers.R.string.btn_logout),
+                subtitle = stringResource(com.squarenova.emaanwallpapers.R.string.btn_logout_sub),
                 icon = Icons.AutoMirrored.Filled.Logout,
                 onClick = onLogout,
             )
@@ -849,8 +849,8 @@ fun ProfileDangerZoneSection(
                 color = ProfileDanger.copy(alpha = 0.12f),
             )
             ProfileDangerRow(
-                title = "Delete Account",
-                subtitle = "Permanently remove your data",
+                title = stringResource(com.squarenova.emaanwallpapers.R.string.btn_delete_account),
+                subtitle = stringResource(com.squarenova.emaanwallpapers.R.string.btn_delete_account_sub),
                 icon = Icons.Default.Delete,
                 onClick = onDeleteAccount,
             )

@@ -49,7 +49,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.squarenova.emaanwallpapers.R
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -355,12 +357,12 @@ fun SubscriptionScreen(navController: NavController) {
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.sub_back),
                             modifier = Modifier.size(22.dp),
                         )
                     }
                     Text(
-                        text = "प्रीमियम",
+                        text = stringResource(R.string.sub_title),
                         color = PremiumSubscriptionColors.TextPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
@@ -392,7 +394,7 @@ fun SubscriptionScreen(navController: NavController) {
                         }
                         Spacer(modifier = Modifier.height(if (tight) 10.dp else 16.dp))
                         Text(
-                            text = "Emaan Premium",
+                            text = stringResource(R.string.sub_headline),
                             color = PremiumSubscriptionColors.TextPrimary,
                             fontSize = titleSize,
                             fontWeight = FontWeight.Medium,
@@ -401,7 +403,7 @@ fun SubscriptionScreen(navController: NavController) {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "इस्लामिक वॉलपेपर, रिंगटोन और रील्स\nअब एक ही जगह",
+                            text = stringResource(R.string.sub_pitch),
                             color = PremiumSubscriptionColors.TextSecondary,
                             fontSize = 14.sp,
                             lineHeight = 21.sp,
@@ -412,7 +414,7 @@ fun SubscriptionScreen(navController: NavController) {
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "अभी सिर्फ",
+                            text = stringResource(R.string.sub_only),
                             color = PremiumSubscriptionColors.TextMuted,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Normal,
@@ -426,7 +428,7 @@ fun SubscriptionScreen(navController: NavController) {
                             letterSpacing = (-1).sp,
                         )
                         Text(
-                            text = "देकर आज ही शुरू करें",
+                            text = stringResource(R.string.sub_start_today),
                             color = PremiumSubscriptionColors.TextSecondary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Normal,
@@ -439,20 +441,20 @@ fun SubscriptionScreen(navController: NavController) {
                     ) {
                         SubscriptionBenefit(
                             icon = Icons.Outlined.Wallpaper,
-                            title = "इस्लामिक वॉलपेपर",
-                            subtitle = "HD क्वालिटी",
+                            title = stringResource(R.string.sub_feature_wallpapers),
+                            subtitle = stringResource(R.string.sub_feature_wallpapers_sub),
                             compact = compact,
                         )
                         SubscriptionBenefit(
                             icon = Icons.Outlined.MusicNote,
-                            title = "इस्लामिक रिंगटोन",
-                            subtitle = "बेहतरीन कलेक्शन",
+                            title = stringResource(R.string.sub_feature_ringtones),
+                            subtitle = stringResource(R.string.sub_feature_ringtones_sub),
                             compact = compact,
                         )
                         SubscriptionBenefit(
                             icon = Icons.Outlined.PlayCircle,
-                            title = "इस्लामिक रील्स",
-                            subtitle = "देखें और शेयर करें",
+                            title = stringResource(R.string.sub_feature_reels),
+                            subtitle = stringResource(R.string.sub_feature_reels_sub),
                             compact = compact,
                         )
                     }
@@ -466,7 +468,7 @@ fun SubscriptionScreen(navController: NavController) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     PremiumGradientCtaButton(
-                        text = "₹${SubscriptionPricing.AUTHORIZATION_AMOUNT} देकर आज ही शुरू करें",
+                        text = stringResource(R.string.sub_cta, SubscriptionPricing.AUTHORIZATION_AMOUNT),
                         onClick = { startSubscription() },
                         enabled = !showTrialSuccessScreen && !confirming && !showUpiPicker,
                         loading = isLoading,
@@ -481,7 +483,7 @@ fun SubscriptionScreen(navController: NavController) {
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "सुरक्षित भुगतान",
+                            text = stringResource(R.string.sub_secure),
                             color = PremiumSubscriptionColors.TextMuted,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Normal,
@@ -492,7 +494,7 @@ fun SubscriptionScreen(navController: NavController) {
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     ) {
                         Text(
-                            text = "Subscription शर्तें देखें",
+                            text = stringResource(R.string.sub_terms),
                             color = PremiumSubscriptionColors.TextMuted,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Normal,
@@ -561,11 +563,9 @@ private fun SubscriptionConfirmingOverlay(
             CircularProgressIndicator(color = PremiumSubscriptionColors.Gold)
             Spacer(modifier = Modifier.height(20.dp))
             Text(
-                text = if (soft) {
-                    "Subscription अभी confirm हो रहा है…"
-                } else {
-                    "आपका subscription confirm हो रहा है…"
-                },
+                text = stringResource(
+                    if (soft) R.string.sub_confirming_short else R.string.sub_confirming,
+                ),
                 color = PremiumSubscriptionColors.TextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -574,12 +574,7 @@ private fun SubscriptionConfirmingOverlay(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = if (soft) {
-                    "थोड़ा समय लग रहा है। हम background में automatically पूरा कर देंगे — " +
-                        "दोबारा charge नहीं होगा और आपका premium नहीं जाएगा।"
-                } else {
-                    "कृपया app खुला रखें। इसमें कुछ क्षण लग सकते हैं — दोबारा charge नहीं होगा।"
-                },
+                text = stringResource(if (soft) R.string.sub_slow else R.string.sub_keep_open),
                 color = PremiumSubscriptionColors.TextSecondary,
                 fontSize = 13.sp,
                 lineHeight = 20.sp,
@@ -589,7 +584,7 @@ private fun SubscriptionConfirmingOverlay(
                 Spacer(modifier = Modifier.height(16.dp))
                 TextButton(onClick = onContinueInBackground) {
                     Text(
-                        text = "Browse करते रहें",
+                        text = stringResource(R.string.sub_browse),
                         color = PremiumSubscriptionColors.Gold,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,

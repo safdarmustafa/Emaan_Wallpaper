@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.squarenova.emaanwallpapers.data.model.Ringtone
@@ -200,7 +201,7 @@ private fun CompactSetButton(onClick: () -> Unit) {
         border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.8f)),
     ) {
         Text(
-            text = "Set",
+            text = stringResource(com.squarenova.emaanwallpapers.R.string.btn_set),
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             color = BrandGreen,
             fontSize = 13.sp,

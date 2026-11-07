@@ -23,6 +23,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -72,6 +73,7 @@ fun OtpScreen(
     var remainingSeconds by remember { mutableIntStateOf(30) }
     var isResending by remember { mutableStateOf(false) }
     var resendMessage by remember { mutableStateOf<String?>(null) }
+    var resendIsError by remember { mutableStateOf(false) }
 
     LaunchedEffect(resendTimerKey) {
         remainingSeconds = 30
@@ -88,7 +90,7 @@ fun OtpScreen(
     fun verifyEnteredOtp() {
         if (isVerifying) return
         if (enteredOtp.length != 6) {
-            errorMessage = "Enter the 6-digit OTP"
+            errorMessage = context.getString(R.string.otp_enter)
             return
         }
         focusManager.clearFocus()
@@ -108,7 +110,7 @@ fun OtpScreen(
                     )
                     if (verifyResult.isFailure) {
                         errorMessage = verifyResult.exceptionOrNull()?.message
-                            ?: "Invalid OTP. Try again."
+                            ?: context.getString(R.string.otp_invalid)
                         return@launch
                     }
                 }
@@ -163,7 +165,7 @@ fun OtpScreen(
 
             } catch (e: Exception) {
                 SecureLog.e("OTP_SCREEN", "verify failed", e)
-                errorMessage = "Something went wrong. Try again."
+                errorMessage = context.getString(R.string.otp_generic_error)
             } finally {
                 isVerifying = false
             }
@@ -243,7 +245,7 @@ fun OtpScreen(
             ) {
 
                 Text(
-                    text = "Verify OTP",
+                    text = stringResource(R.string.otp_title),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF064E3B)
@@ -252,7 +254,7 @@ fun OtpScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Code sent to +91 $phone",
+                    text = stringResource(R.string.otp_sent, phone),
                     fontSize = 14.sp,
                     color = Color(0xFF0F5132)
                 )
@@ -364,7 +366,7 @@ fun OtpScreen(
                         )
                     } else {
                         Text(
-                            text = "Verify",
+                            text = stringResource(R.string.otp_verify),
                             color = Color.Black,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -378,6 +380,7 @@ fun OtpScreen(
                     onClick = {
                         if (isResending) return@TextButton
                         resendMessage = null
+                        resendIsError = false
                         errorMessage = ""
 
                         isResending = true
@@ -387,15 +390,18 @@ fun OtpScreen(
                                 val response = OtpApi.sendOtp(cleanPhone, caller = "login_resend")
 
                                 if (response.isSuccess) {
-                                    resendMessage = "OTP sent successfully."
+                                    resendIsError = false
+                                    resendMessage = context.getString(R.string.otp_sent_ok)
                                     resendTimerKey += 1
                                 } else {
+                                    resendIsError = true
                                     resendMessage = response.exceptionOrNull()?.message
-                                        ?: "Failed to resend OTP. Try again."
+                                        ?: context.getString(R.string.otp_resend_failed)
                                 }
                             } catch (e: Exception) {
                                 SecureLog.e("OTP_SCREEN_RESEND", "resend failed", e)
-                                resendMessage = "Failed to resend OTP. Try again."
+                                resendIsError = true
+                                resendMessage = context.getString(R.string.otp_resend_failed)
                             } finally {
                                 isResending = false
                             }
@@ -404,9 +410,9 @@ fun OtpScreen(
                 ) {
                     Text(
                         text = if (remainingSeconds > 0) {
-                            "Resend OTP in ${remainingSeconds}s"
+                            stringResource(R.string.otp_resend_in, remainingSeconds)
                         } else {
-                            if (isResending) "Resending..." else "Resend OTP"
+                            stringResource(if (isResending) R.string.otp_resending else R.string.otp_resend)
                         },
                         color = Color(0xFF0F5132),
                         fontSize = 13.sp
@@ -417,7 +423,7 @@ fun OtpScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = resendMessage ?: "",
-                        color = if (resendMessage?.contains("Failed", ignoreCase = true) == true) Color.Red else Color(0xFF0F5132),
+                        color = if (resendIsError) Color.Red else Color(0xFF0F5132),
                         fontSize = 12.sp
                     )
                 }

@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.squarenova.emaanwallpapers.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -74,7 +76,7 @@ fun ProfileSetupScreen(navController: NavController) {
             Text("🌙", fontSize = 48.sp, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Complete Your Profile",
+                text = stringResource(R.string.setup_title),
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
@@ -82,7 +84,7 @@ fun ProfileSetupScreen(navController: NavController) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Let's personalise your Emaan experience",
+                text = stringResource(R.string.setup_subtitle),
                 color = Color.White.copy(alpha = 0.65f),
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center
@@ -102,13 +104,13 @@ fun ProfileSetupScreen(navController: NavController) {
                 ) {
 
                     SetupField(
-                        label = "First Name *",
+                        label = stringResource(R.string.setup_first_name),
                         value = firstName,
                         onValueChange = { firstName = it }
                     )
 
                     SetupField(
-                        label = "Last Name *",
+                        label = stringResource(R.string.setup_last_name),
                         value = lastName,
                         onValueChange = { lastName = it }
                     )
@@ -133,11 +135,11 @@ fun ProfileSetupScreen(navController: NavController) {
                 onClick = {
                     // Validate required fields
                     if (firstName.trim().isEmpty()) {
-                        errorMessage = "First name is required"
+                        errorMessage = context.getString(R.string.setup_first_required)
                         return@Button
                     }
                     if (lastName.trim().isEmpty()) {
-                        errorMessage = "Last name is required"
+                        errorMessage = context.getString(R.string.setup_last_required)
                         return@Button
                     }
 
@@ -148,7 +150,7 @@ fun ProfileSetupScreen(navController: NavController) {
                         try {
                             val phone = dataStoreManager.phoneNumber.firstOrNull()
                             if (phone.isNullOrEmpty()) {
-                                errorMessage = "Session expired. Please login again."
+                                errorMessage = context.getString(R.string.setup_session)
                                 isSaving = false
                                 return@launch
                             }
@@ -191,7 +193,7 @@ fun ProfileSetupScreen(navController: NavController) {
 
                         } catch (e: Exception) {
                             Log.e("PROFILE_SETUP_ERROR", e.message ?: "Unknown")
-                            errorMessage = "Failed to save profile. Try again."
+                            errorMessage = context.getString(R.string.setup_save_failed)
                             isSaving = false
                         }
                     }
@@ -211,7 +213,7 @@ fun ProfileSetupScreen(navController: NavController) {
                     )
                 } else {
                     Text(
-                        "Save & Continue",
+                        stringResource(R.string.setup_save),
                         color = Color.Black,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
@@ -250,7 +252,7 @@ fun ProfileSetupScreen(navController: NavController) {
                 }
             }) {
                 Text(
-                    "Skip for now",
+                    stringResource(R.string.setup_skip),
                     color = Color.White.copy(alpha = 0.4f),
                     fontSize = 13.sp
                 )

@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.EmaanWallpapers" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- AppCompat theme so per-app language works on Android 7–12. Stays light; Compose draws the UI. -->
+    <style name="Theme.EmaanWallpapers" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:colorBackground">@color/window_background</item>
+        <item name="android:windowAnimationStyle">@style/Animation.Emaan.Locale</item>
+    </style>
+
+    <style name="Animation.Emaan.Locale" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/locale_fade_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/locale_fade_out</item>
+        <item name="android:activityCloseEnterAnimation">@anim/locale_fade_in</item>
+        <item name="android:activityCloseExitAnimation">@anim/locale_fade_out</item>
+        <item name="android:taskOpenEnterAnimation">@anim/locale_fade_in</item>
+        <item name="android:taskOpenExitAnimation">@anim/locale_fade_out</item>
+        <item name="android:taskCloseEnterAnimation">@anim/locale_fade_in</item>
+        <item name="android:taskCloseExitAnimation">@anim/locale_fade_out</item>
+    </style>
 </resources>

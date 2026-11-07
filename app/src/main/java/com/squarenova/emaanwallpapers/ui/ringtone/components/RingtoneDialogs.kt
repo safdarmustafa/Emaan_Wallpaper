@@ -28,6 +28,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.stringResource
+import com.squarenova.emaanwallpapers.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -166,7 +168,7 @@ fun RingtoneSuccessDialog(
         )
         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
         Text(
-            text = "Successfully set as your default ringtone.",
+            text = stringResource(R.string.ringtone_set_ok),
             fontSize = 14.sp,
             color = Color(0xFF5F6B62),
             textAlign = TextAlign.Center
@@ -178,7 +180,7 @@ fun RingtoneSuccessDialog(
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = BrandGreen)
         ) {
-            Text("Done", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 4.dp))
+            Text(stringResource(R.string.ringtone_done), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 4.dp))
         }
     }
 }
@@ -191,7 +193,7 @@ fun DownloadSuccessDialog(
         AnimatedSuccessCheck()
         androidx.compose.foundation.layout.Spacer(Modifier.size(18.dp))
         Text(
-            text = "Downloaded Successfully",
+            text = stringResource(R.string.ringtone_downloaded),
             fontSize = 19.sp,
             fontWeight = FontWeight.Bold,
             color = BrandGreenDark,
@@ -199,7 +201,7 @@ fun DownloadSuccessDialog(
         )
         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
         Text(
-            text = "Your ringtone is saved and ready to use.",
+            text = stringResource(R.string.ringtone_downloaded_body),
             fontSize = 14.sp,
             color = Color(0xFF5F6B62),
             textAlign = TextAlign.Center
@@ -211,14 +213,14 @@ fun DownloadSuccessDialog(
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = BrandGreen)
         ) {
-            Text("Done", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 4.dp))
+            Text(stringResource(R.string.ringtone_done), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 4.dp))
         }
     }
 }
 
 @Composable
 fun RingtoneFailureDialog(
-    message: String = "Couldn't set automatically.",
+    message: String,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -241,7 +243,7 @@ fun RingtoneFailureDialog(
         )
         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
         Text(
-            text = "Open ringtone settings?",
+            text = stringResource(R.string.ringtone_open_settings),
             fontSize = 14.sp,
             color = Color(0xFF5F6B62),
             textAlign = TextAlign.Center
@@ -253,7 +255,7 @@ fun RingtoneFailureDialog(
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = BrandGreen)
         ) {
-            Text("Open Settings", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 4.dp))
+            Text(stringResource(R.string.ringtone_open_settings_btn), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 4.dp))
         }
         androidx.compose.foundation.layout.Spacer(Modifier.size(6.dp))
         OutlinedButton(
@@ -261,7 +263,7 @@ fun RingtoneFailureDialog(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Cancel", modifier = Modifier.padding(vertical = 4.dp))
+            Text(stringResource(R.string.btn_cancel), modifier = Modifier.padding(vertical = 4.dp))
         }
     }
 }

@@ -84,8 +84,9 @@ android {
 }
 
 dependencies {
-    // ✅ Material Design (latest stable)
+    // ✅ Material Design (latest stable). AppCompat is required for per-app language on API 24–32.
     implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
 
     // Cashfree Subscription SDK (UPI Autopay mandate via UPI Intent)
     implementation("com.cashfree.pg:api:2.5.0")
