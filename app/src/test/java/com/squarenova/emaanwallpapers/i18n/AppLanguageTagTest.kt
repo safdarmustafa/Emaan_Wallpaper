@@ -35,4 +35,21 @@ class AppLanguageTagTest {
         assertTrue(shouldApplyLanguage(current = "en", requested = "hi"))
         assertTrue(shouldApplyLanguage(current = "hi", requested = "en"))
     }
+
+    @Test
+    fun applyGateMatchesOverlayGate() {
+        // Overlay must only appear when apply would actually change language.
+        assertEquals(
+            shouldApplyLanguage("en", "hi"),
+            shouldShowLanguageSwitchCover(false, "en", "hi"),
+        )
+        assertEquals(
+            shouldApplyLanguage("en", "en"),
+            shouldShowLanguageSwitchCover(false, "en", "en"),
+        )
+        assertEquals(
+            shouldApplyLanguage("hi", "en"),
+            shouldShowLanguageSwitchCover(false, "hi", "en"),
+        )
+    }
 }

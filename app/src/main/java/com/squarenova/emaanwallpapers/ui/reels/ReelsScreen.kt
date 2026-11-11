@@ -68,6 +68,7 @@ import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.ui.components.smoothClickable
 import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.R
+import com.squarenova.emaanwallpapers.navigation.BOTTOM_NAV_CONTENT_INSET_DP
 import com.squarenova.emaanwallpapers.network.CategoryCatalog
 import com.squarenova.emaanwallpapers.network.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
@@ -523,7 +524,12 @@ fun ReelItem(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = BOTTOM_NAV_CONTENT_INSET_DP.dp)
+            .background(Color.Black),
+    ) {
 
         // ✅ Full screen video — no black gaps
         AndroidView(

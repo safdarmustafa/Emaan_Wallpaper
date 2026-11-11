@@ -33,10 +33,7 @@
 -dontwarn com.mixpanel.**
 -dontwarn com.facebook.**
 
-# Strip debug-only log classes in release (optional shrink)
--assumenosideeffects class com.squarenova.emaanwallpapers.data.EntitlementDebugLog {
-    public static *** check(...);
-    public static *** navigation(...);
-}
+# EntitlementDebugLog is a Kotlin object (not Java static). Methods already
+# no-op when !BuildConfig.DEBUG, so no -assumenosideeffects needed here.
 
 -dontwarn org.slf4j.impl.StaticLoggerBinder

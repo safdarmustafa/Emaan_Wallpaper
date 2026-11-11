@@ -28,6 +28,7 @@ import {
   parseDate,
   PREMIUM_GRACE_MS,
 } from "../_shared/premium.ts";
+import { trackMoneyAnalytics } from "../_shared/analytics.ts";
 import { errorResponse, successResponse } from "../_shared/response.ts";
 
 type LocalSubscriptionStatus = "pending" | "active" | "cancelled" | "expired";
@@ -302,7 +303,7 @@ Deno.serve(async (req) => {
     const { data: subscription, error: lookupError } = await supabase
       .from("subscriptions")
       .select(
-        "id, status, cashfree_subscription_id, plan_type, end_date, next_billing_date, last_payment_id",
+        "id, status, cashfree_subscription_id, plan_type, end_date, next_billing_date, last_payment_id, phone",
       )
       .eq("cashfree_subscription_id", merchantSubscriptionId)
       .maybeSingle();
@@ -328,6 +329,9 @@ Deno.serve(async (req) => {
 
     const subscriptionRowId = subscription.id as number;
     let updates: Record<string, unknown> | null = null;
+    // Money analytics only after a successful DB write for AUTH/CHARGE.
+    let analyticsKind: "AUTH" | "CHARGE" | null = null;
+    let analyticsPaymentId: string | null = null;
 
     const existingEnd = parseDate(subscription.end_date);
 
@@ -394,6 +398,9 @@ Deno.serve(async (req) => {
       // Never shorten an already-earned paid-through date.
       updates.end_date = (laterOf(existingEnd, computedEnd) ?? computedEnd)
         .toISOString();
+
+      analyticsKind = kind;
+      analyticsPaymentId = paymentId;
 
       console.info("cashfree-webhook payment success", {
         subscriptionRowId,
@@ -511,6 +518,18 @@ Deno.serve(async (req) => {
       eventType,
       status: updates.status,
     });
+
+    // After DB commit only: ₹3 AUTH → StartTrial, ₹499 CHARGE → Purchase.
+    // Never fail the webhook if analytics is down.
+    if (analyticsKind && analyticsPaymentId) {
+      await trackMoneyAnalytics({
+        kind: analyticsKind,
+        paymentId: analyticsPaymentId,
+        phone: typeof subscription.phone === "string" ? subscription.phone : null,
+        subscriptionId: String(subscriptionRowId),
+        cashfreeSubscriptionId: merchantSubscriptionId,
+      });
+    }
 
     return successResponse("Webhook processed successfully.", {
       processed: true,

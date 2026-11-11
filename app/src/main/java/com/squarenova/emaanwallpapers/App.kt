@@ -11,6 +11,7 @@ import com.facebook.appevents.AppEventsLogger
 import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.ktx.Firebase
+import com.squarenova.emaanwallpapers.analytics.AnalyticsLifecycle
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import coil.Coil
@@ -27,52 +28,32 @@ class App : Application() {
 
         super.onCreate()
 
-
-// =========================
-// Firebase (Analytics)
-// =========================
+        // =========================
+        // Firebase (Analytics)
+        // =========================
 
         FirebaseApp.initializeApp(this)
         Firebase.analytics.setAnalyticsCollectionEnabled(true)
-
-
 
         // =========================
         // Meta / Facebook SDK
         // =========================
 
-        // TEMP META DEBUG — remove after investigation
-        FacebookSdk.setIsDebugEnabled(true)
-        FacebookSdk.addLoggingBehavior(LoggingBehavior.APP_EVENTS)
-        FacebookSdk.addLoggingBehavior(LoggingBehavior.REQUESTS)
-        FacebookSdk.addLoggingBehavior(LoggingBehavior.INCLUDE_RAW_RESPONSES)
-        FacebookSdk.addLoggingBehavior(LoggingBehavior.DEVELOPER_ERRORS)
-        FacebookSdk.addLoggingBehavior(LoggingBehavior.GRAPH_API_DEBUG_INFO)
-        FacebookSdk.addLoggingBehavior(LoggingBehavior.GRAPH_API_DEBUG_WARNING)
-        Log.d(
-            "MetaDebug",
-            "pre-init isInitialized=${FacebookSdk.isInitialized()} " +
-                "isFullyInitialized=${FacebookSdk.isFullyInitialized()}",
-        )
-        // END TEMP META DEBUG
-
+        FacebookSdk.setAutoInitEnabled(true)
+        FacebookSdk.setAutoLogAppEventsEnabled(true)
+        FacebookSdk.setAdvertiserIDCollectionEnabled(true)
+        if (BuildConfig.DEBUG) {
+            FacebookSdk.setIsDebugEnabled(true)
+            FacebookSdk.addLoggingBehavior(LoggingBehavior.APP_EVENTS)
+            Log.d(
+                "MetaSDK",
+                "init appId=${FacebookSdk.getApplicationId()} " +
+                    "clientTokenSet=${!FacebookSdk.getClientToken().isNullOrBlank()}",
+            )
+        }
         FacebookSdk.fullyInitialize()
-        // TEMP META DEBUG — remove after investigation
-        Log.d(
-            "MetaDebug",
-            "post-fullyInitialize isInitialized=${FacebookSdk.isInitialized()} " +
-                "isFullyInitialized=${FacebookSdk.isFullyInitialized()} " +
-                "applicationId=${FacebookSdk.getApplicationId()} " +
-                "clientTokenSet=${!FacebookSdk.getClientToken().isNullOrBlank()} " +
-                "autoLog=${FacebookSdk.getAutoLogAppEventsEnabled()} " +
-                "advertiserIdCollection=${FacebookSdk.getAdvertiserIDCollectionEnabled()}",
-        )
-        Log.d("MetaDebug", "calling AppEventsLogger.activateApp(Application)")
-        // END TEMP META DEBUG
         AppEventsLogger.activateApp(this)
-        // TEMP META DEBUG — remove after investigation
-        Log.d("MetaDebug", "AppEventsLogger.activateApp(Application) returned")
-        // END TEMP META DEBUG
+        AppEventsLogger.newLogger(this).flush()
 
         // =========================
         // Premium entitlement (Cashfree subscription-status, cached)
@@ -89,11 +70,7 @@ class App : Application() {
             BuildConfig.MIXPANEL_TOKEN
         )
 
-        try {
-            AnalyticsManager.flush()
-        } catch (e: Exception) {
-            // Analytics must never block or crash app startup.
-        }
+        AnalyticsLifecycle.trackLaunch(this)
 
         // Flush analytics when app goes background.
         ProcessLifecycleOwner.get().lifecycle.addObserver(

@@ -268,7 +268,7 @@ Deno.serve(async (req) => {
       .from("subscriptions")
       .select("id, status, cashfree_subscription_id, end_date")
       .eq("user_id", userId)
-      .in("status", ["active", "pending", "cancelled"])
+      .in("status", ["active", "pending", "cancelled", "expired"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -365,8 +365,8 @@ Deno.serve(async (req) => {
       // !stillPremium → lapsed active: end_date has passed, treat like pending recovery.
     }
 
-    // Lapsed active (end_date passed): cancel the old mandate before creating a new one
-    // so the user is never double-charged.
+    // Lapsed active (end_date passed): best-effort cancel of the old mandate, then renew.
+    // Do not block checkout if Cashfree cancel fails (mandate often already dead/expired).
     const isLapsedActive = existing !== null && existing.status === "active";
     if (isLapsedActive) {
       const previousCashfreeSubscriptionId =
@@ -377,25 +377,31 @@ Deno.serve(async (req) => {
         const cleanup = await cancelCashfreeSubscription(
           previousCashfreeSubscriptionId,
         );
-        if (!cleanup.success && !isNonActionableCancelError(cleanup.detail)) {
-          console.error("create-subscription lapsed cancel failed; not renewing", {
+        if (cleanup.success || isNonActionableCancelError(cleanup.detail)) {
+          console.info("create-subscription lapsed mandate cancelled", {
+            userId,
+            subscriptionRowId: existing.id,
+            previousCashfreeSubscriptionId,
+            detail: cleanup.detail ?? null,
+          });
+        } else {
+          console.warn("create-subscription lapsed cancel failed; continuing renew", {
             userId,
             subscriptionRowId: existing.id,
             previousCashfreeSubscriptionId,
             detail: cleanup.detail,
           });
-          return errorResponse(ERROR_CODES.INTERNAL_SERVER_ERROR);
         }
-        console.info("create-subscription lapsed mandate cancelled", {
-          userId,
-          subscriptionRowId: existing.id,
-          previousCashfreeSubscriptionId,
-        });
       }
     }
 
-    // Pending / cancelled recovery: best-effort cancel of the OLD Cashfree subscription first.
-    if (existing && (existing.status === "pending" || existing.status === "cancelled")) {
+    // Pending / cancelled / expired recovery: best-effort cancel of the OLD Cashfree sub.
+    if (
+      existing &&
+      (existing.status === "pending" ||
+        existing.status === "cancelled" ||
+        existing.status === "expired")
+    ) {
       const previousCashfreeSubscriptionId =
         typeof existing.cashfree_subscription_id === "string"
           ? existing.cashfree_subscription_id.trim()
@@ -463,9 +469,15 @@ Deno.serve(async (req) => {
       return errorResponse(ERROR_CODES.INTERNAL_SERVER_ERROR);
     }
 
-    // Pending / cancelled / lapsed recovery: update the SAME row with the new
-    // Cashfree subscription. end_date is left as-is for lapsed rows.
-    if (existing && (existing.status === "pending" || existing.status === "cancelled" || isLapsedActive)) {
+    // Pending / cancelled / expired / lapsed recovery: update the SAME row.
+    // end_date is left as-is until AUTH/CHARGE webhook extends it.
+    if (
+      existing &&
+      (existing.status === "pending" ||
+        existing.status === "cancelled" ||
+        existing.status === "expired" ||
+        isLapsedActive)
+    ) {
       const { error: updateError } = await supabase
         .from("subscriptions")
         .update({

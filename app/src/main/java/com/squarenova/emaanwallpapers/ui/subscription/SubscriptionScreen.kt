@@ -195,20 +195,9 @@ fun SubscriptionScreen(navController: NavController) {
             }
             confirming = false
             if (hasPremium) {
-                val subscriptionId = pendingSession?.subscriptionId ?: phoneForApi
                 pendingSession = null
                 paymentErrorDialog = null
-                AnalyticsManager.trackPurchaseOnce(
-                    key = "purchase:cashfree:$subscriptionId",
-                    amount = SubscriptionPricing.MONTHLY_AMOUNT,
-                    currency = SubscriptionPricing.CURRENCY,
-                    props = mapOf(
-                        "subscription_id" to subscriptionId,
-                        "status" to EntitlementRepository.lastStatus.orEmpty(),
-                        "billing_type" to "client_activation",
-                        "source" to "android_cashfree",
-                    ),
-                )
+                // Money events (StartTrial ₹3 / Purchase ₹499) fire from cashfree-webhook only.
                 showTrialSuccessScreen = true
             } else {
                 // Verify also fires for pending/cancelled UPI flows; stay on the paywall quietly.

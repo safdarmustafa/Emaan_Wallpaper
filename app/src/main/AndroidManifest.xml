@@ -8,6 +8,9 @@
     <!-- Network state -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Required for Meta/Facebook SDK Advertising ID (Android 13+) -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
     <!-- Wallpaper permissions -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
@@ -47,6 +50,14 @@
         <meta-data
             android:name="com.facebook.sdk.ClientToken"
             android:value="@string/facebook_client_token" />
+
+        <meta-data
+            android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+            android:value="true" />
+
+        <meta-data
+            android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
+            android:value="true" />
 
         <!-- ========================= -->
         <!-- Mixpanel -->

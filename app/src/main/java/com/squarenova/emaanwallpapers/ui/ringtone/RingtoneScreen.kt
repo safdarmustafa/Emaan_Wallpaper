@@ -58,6 +58,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.squarenova.emaanwallpapers.data.model.Ringtone
+import com.squarenova.emaanwallpapers.navigation.BOTTOM_NAV_CONTENT_INSET_DP
 import com.squarenova.emaanwallpapers.network.CategoryCatalog
 import com.squarenova.emaanwallpapers.network.ContentCategory
 import com.squarenova.emaanwallpapers.theme.AppBackground
@@ -223,7 +224,8 @@ fun RingtoneScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(ScreenBackground)
+            .padding(bottom = BOTTOM_NAV_CONTENT_INSET_DP.dp)
+            .background(ScreenBackground),
     ) {
         Column(
             modifier = Modifier

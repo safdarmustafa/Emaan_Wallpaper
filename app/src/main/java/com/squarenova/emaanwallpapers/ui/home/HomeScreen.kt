@@ -73,6 +73,7 @@ import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.data.UserAccountLookup
 import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
+import com.squarenova.emaanwallpapers.navigation.BOTTOM_NAV_CONTENT_INSET_DP
 import com.squarenova.emaanwallpapers.network.CategoryCatalog
 import com.squarenova.emaanwallpapers.network.WallpaperCatalog
 import com.squarenova.emaanwallpapers.network.WallpaperRow
@@ -492,7 +493,11 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = BOTTOM_NAV_CONTENT_INSET_DP.dp),
+    ) {
 
         Column(modifier = Modifier.fillMaxSize().background(homeBg)) {
 
@@ -508,7 +513,11 @@ fun HomeScreen(navController: NavController) {
                 isSubscribed = hasPremium,
                 subscriptionStatus = cashfreeSubscription?.status,
                 trialEndIso = cashfreeSubscription?.endDate,
-                onProfileClick = { navController.navigate("profile") }
+                onProfileClick = {
+                    navController.navigate("profile") {
+                        launchSingleTop = true
+                    }
+                },
             )
 
             // ── Category row with filter icon ────
