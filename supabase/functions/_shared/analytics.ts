@@ -17,6 +17,8 @@ export const TRIAL_AMOUNT = 3;
 export const ANALYTICS_EVENTS = {
   START_TRIAL: "StartTrial",
   PURCHASE: "Purchase",
+  /** Meta standard Subscribe event for ₹499 recurring charge. */
+  SUBSCRIBE: "Subscribe",
   /** Mixpanel-only: ₹499 recurring charge collected. */
   SUBSCRIPTION_PAID: "subscription_paid",
 } as const;
@@ -42,7 +44,7 @@ export function moneyEventForKind(
 ): { metaEventName: string; mixpanelEventName: string | null; value: number; currency: string } {
   if (kind === "CHARGE") {
     return {
-      metaEventName: ANALYTICS_EVENTS.PURCHASE,
+      metaEventName: ANALYTICS_EVENTS.SUBSCRIBE,
       mixpanelEventName: ANALYTICS_EVENTS.SUBSCRIPTION_PAID,
       value: MONTHLY_CHARGE_AMOUNT,
       currency: "INR",
