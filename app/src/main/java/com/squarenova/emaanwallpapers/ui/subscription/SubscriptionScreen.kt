@@ -58,6 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
@@ -197,7 +198,22 @@ fun SubscriptionScreen(navController: NavController) {
             if (hasPremium) {
                 pendingSession = null
                 paymentErrorDialog = null
-                // Money events (StartTrial ₹3 / Purchase ₹499) fire from cashfree-webhook only.
+                AnalyticsManager.trackPurchaseOnce(
+                    key = "trial_purchase",
+                    amount = SubscriptionPricing.AUTHORIZATION_AMOUNT.toDouble(),
+                    currency = SubscriptionPricing.CURRENCY,
+                    props = mapOf("phone" to phoneForApi),
+                )
+                AnalyticsManager.trackOnce(
+                    key = "trial_paid",
+                    eventName = AnalyticsEvents.TRIAL_PAID,
+                    props = mapOf(
+                        "amount" to SubscriptionPricing.AUTHORIZATION_AMOUNT,
+                        "currency" to SubscriptionPricing.CURRENCY,
+                        "phone" to phoneForApi,
+                    ),
+                )
+                AnalyticsManager.flush()
                 showTrialSuccessScreen = true
             } else {
                 // Verify also fires for pending/cancelled UPI flows; stay on the paywall quietly.
@@ -289,6 +305,22 @@ fun SubscriptionScreen(navController: NavController) {
                     if (phoneForApi.isNotBlank() && EntitlementRepository.refreshDetailed(phoneForApi).hasPremium) {
                         paymentErrorDialog = null
                         pendingSession = null
+                        AnalyticsManager.trackPurchaseOnce(
+                            key = "trial_purchase",
+                            amount = SubscriptionPricing.AUTHORIZATION_AMOUNT.toDouble(),
+                            currency = SubscriptionPricing.CURRENCY,
+                            props = mapOf("phone" to phoneForApi),
+                        )
+                        AnalyticsManager.trackOnce(
+                            key = "trial_paid",
+                            eventName = AnalyticsEvents.TRIAL_PAID,
+                            props = mapOf(
+                                "amount" to SubscriptionPricing.AUTHORIZATION_AMOUNT,
+                                "currency" to SubscriptionPricing.CURRENCY,
+                                "phone" to phoneForApi,
+                            ),
+                        )
+                        AnalyticsManager.flush()
                         showTrialSuccessScreen = true
                     }
                 }

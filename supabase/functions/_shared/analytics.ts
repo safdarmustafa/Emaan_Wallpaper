@@ -13,10 +13,12 @@ import { MONTHLY_CHARGE_AMOUNT } from "./premium.ts";
 /** ₹3 UPI authorization / trial. */
 export const TRIAL_AMOUNT = 3;
 
-/** Standard event names — keep identical on Mixpanel and Meta. */
+/** Standard event names. */
 export const ANALYTICS_EVENTS = {
   START_TRIAL: "StartTrial",
   PURCHASE: "Purchase",
+  /** Mixpanel-only: ₹499 recurring charge collected. */
+  SUBSCRIPTION_PAID: "subscription_paid",
 } as const;
 
 export type MoneyAnalyticsKind = "AUTH" | "CHARGE";
@@ -34,19 +36,21 @@ function optionalEnv(name: string): string | null {
   return value ? value : null;
 }
 
-/** Maps Cashfree payment kind → standard event + amount. */
+/** Maps Cashfree payment kind → Meta event + amount. */
 export function moneyEventForKind(
   kind: MoneyAnalyticsKind,
-): { eventName: string; value: number; currency: string } {
+): { metaEventName: string; mixpanelEventName: string | null; value: number; currency: string } {
   if (kind === "CHARGE") {
     return {
-      eventName: ANALYTICS_EVENTS.PURCHASE,
+      metaEventName: ANALYTICS_EVENTS.PURCHASE,
+      mixpanelEventName: ANALYTICS_EVENTS.SUBSCRIPTION_PAID,
       value: MONTHLY_CHARGE_AMOUNT,
       currency: "INR",
     };
   }
   return {
-    eventName: ANALYTICS_EVENTS.START_TRIAL,
+    metaEventName: ANALYTICS_EVENTS.PURCHASE,
+    mixpanelEventName: null,
     value: TRIAL_AMOUNT,
     currency: "INR",
   };
@@ -249,7 +253,7 @@ export async function trackMoneyAnalytics(
   payload: MoneyAnalyticsPayload,
 ): Promise<void> {
   try {
-    const { eventName, value, currency } = moneyEventForKind(payload.kind);
+    const { metaEventName, mixpanelEventName, value, currency } = moneyEventForKind(payload.kind);
     const phone = normalizePhone(payload.phone);
     const eventId = payload.paymentId.trim();
     if (!eventId) {
@@ -273,27 +277,35 @@ export async function trackMoneyAnalytics(
       props.cashfree_subscription_id = payload.cashfreeSubscriptionId;
     }
 
-    await Promise.all([
-      trackMixpanel({
-        eventName,
-        distinctId,
-        insertId: eventId,
-        value,
-        currency,
-        props,
-      }),
+    const tasks: Promise<void>[] = [
       trackMetaCapi({
-        eventName,
+        eventName: metaEventName,
         eventId,
         value,
         currency,
         phone,
         props,
       }),
-    ]);
+    ];
+
+    if (mixpanelEventName) {
+      tasks.push(
+        trackMixpanel({
+          eventName: mixpanelEventName,
+          distinctId,
+          insertId: eventId,
+          value,
+          currency,
+          props,
+        }),
+      );
+    }
+
+    await Promise.all(tasks);
 
     console.info("analytics money event sent", {
-      eventName,
+      metaEventName,
+      mixpanelEventName,
       value,
       kind: payload.kind,
       paymentId: eventId,

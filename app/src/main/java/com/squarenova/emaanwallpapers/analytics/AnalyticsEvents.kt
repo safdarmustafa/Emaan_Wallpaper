@@ -23,4 +23,10 @@ object AnalyticsEvents {
 
     /** Mixpanel Purchase / Meta logPurchase (₹499 CHARGE). Fired from cashfree-webhook. */
     const val PURCHASE = "Purchase"
+
+    /** Mixpanel: ₹3 trial paid (client-side, on UPI auth success). */
+    const val TRIAL_PAID = "trial_paid"
+
+    /** Mixpanel: ₹499 recurring charge collected (server webhook only). */
+    const val SUBSCRIPTION_PAID = "subscription_paid"
 }
