@@ -65,7 +65,11 @@ import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import com.squarenova.emaanwallpapers.subscription.SubscriptionPricing
 import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionCheckout
 import com.squarenova.emaanwallpapers.subscription.cashfree.CashfreeSubscriptionRepository
+import com.squarenova.emaanwallpapers.subscription.cashfree.InstalledUpiApp
 import com.squarenova.emaanwallpapers.subscription.cashfree.SubscriptionCheckoutBridge
+import com.squarenova.emaanwallpapers.subscription.cashfree.UpiLastUsedStore
+import com.squarenova.emaanwallpapers.subscription.cashfree.canStartTrialPayment
+import com.squarenova.emaanwallpapers.subscription.cashfree.preferDefaultUpiPackage
 import com.squarenova.emaanwallpapers.ui.legal.LegalUrlOpener
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
@@ -100,7 +104,9 @@ fun SubscriptionScreen(navController: NavController) {
     /** Cashfree subscription + session from create-subscription, used to launch the UPI intent. */
     var pendingSession by remember { mutableStateOf<PendingCashfreeSession?>(null) }
 
-    var showUpiPicker by remember { mutableStateOf(false) }
+    /** null = still loading installed UPI apps; empty = none installed. */
+    var installedUpiApps by remember { mutableStateOf<List<InstalledUpiApp>?>(null) }
+    var selectedUpiPackage by remember { mutableStateOf<String?>(null) }
 
     /** UPI app was launched; waiting for the Cashfree callback or the user returning to the app. */
     var awaitingUpiResult by remember { mutableStateOf(false) }
@@ -136,6 +142,20 @@ fun SubscriptionScreen(navController: NavController) {
         }
     }
 
+    // Load UPI apps as soon as the paywall opens — no post-CTA cancel sheet.
+    DisposableEffect(Unit) {
+        var active = true
+        CashfreeSubscriptionCheckout.fetchInstalledUpiApps(context) { apps ->
+            if (!active) return@fetchInstalledUpiApps
+            installedUpiApps = apps
+            selectedUpiPackage = preferDefaultUpiPackage(
+                installedPackageNames = apps.map { it.packageName },
+                lastUsedPackageName = UpiLastUsedStore.read(context),
+            )
+        }
+        onDispose { active = false }
+    }
+
     fun showPaymentError(
         raw: String? = null,
         throwable: Throwable? = null,
@@ -152,7 +172,6 @@ fun SubscriptionScreen(navController: NavController) {
 
     fun navigateBackToLogin() {
         scope.launch {
-            showUpiPicker = false
             showTrialSuccessScreen = false
             EntitlementRepository.clearForLogout()
             dataStoreManager.logout()
@@ -165,10 +184,6 @@ fun SubscriptionScreen(navController: NavController) {
 
     /** Toolbar / system back: leave paywall, never wipe the session. */
     fun leavePaywall() {
-        if (showUpiPicker) {
-            showUpiPicker = false
-            return
-        }
         showTrialSuccessScreen = false
         if (!navController.popBackStack()) {
             activity?.moveTaskToBack(true)
@@ -222,44 +237,10 @@ fun SubscriptionScreen(navController: NavController) {
         }
     }
 
-    fun startSubscription() {
-        if (isLoading || confirming || showUpiPicker) return
-        val phoneForApi = phone.trim()
-        if (phoneForApi.isBlank()) {
-            showPaymentError(raw = "session_expired", onRetry = { navigateBackToLogin() })
-            return
-        }
-        isLoading = true
-        scope.launch {
-            CashfreeSubscriptionRepository.createSubscription(phoneForApi).fold(
-                onSuccess = { created ->
-                    isLoading = false
-                    if (created.alreadyExists && created.status.equals("active", ignoreCase = true)) {
-                        verifyAndUnlock()
-                        return@launch
-                    }
-                    val subscriptionId = created.subscriptionId
-                    val sessionId = created.subscriptionSessionId
-                    if (subscriptionId.isNullOrBlank() || sessionId.isNullOrBlank()) {
-                        showPaymentError(
-                            raw = "Subscription start नहीं हो सकी। फिर कोशिश करें।",
-                            onRetry = { startSubscription() },
-                        )
-                        return@launch
-                    }
-                    pendingSession = PendingCashfreeSession(subscriptionId, sessionId)
-                    showUpiPicker = true
-                },
-                onFailure = { e ->
-                    Log.e(TAG, "create-subscription failed", e)
-                    showPaymentError(raw = e.message, throwable = e, onRetry = { startSubscription() })
-                },
-            )
-        }
-    }
+    // Local mutual recursion: launch retries create; create launches UPI.
+    lateinit var startSubscription: () -> Unit
 
     fun launchUpiApp(packageName: String) {
-        showUpiPicker = false
         val session = pendingSession
         val hostActivity = activity
         if (session == null || hostActivity == null) {
@@ -272,7 +253,11 @@ fun SubscriptionScreen(navController: NavController) {
             subscriptionSessionId = session.sessionId,
             upiAppPackageName = packageName,
         ).fold(
-            onSuccess = { awaitingUpiResult = true },
+            onSuccess = {
+                isLoading = false
+                UpiLastUsedStore.write(context, packageName)
+                awaitingUpiResult = true
+            },
             onFailure = { e ->
                 Log.e(TAG, "launchUpiIntent failed", e)
                 showPaymentError(
@@ -283,6 +268,60 @@ fun SubscriptionScreen(navController: NavController) {
                 )
             },
         )
+    }
+
+    startSubscription = start@{
+        val selected = selectedUpiPackage?.trim().orEmpty()
+        val apps = installedUpiApps
+        if (!canStartTrialPayment(
+                selectedPackageName = selected,
+                appsLoading = apps == null,
+                installedCount = apps?.size ?: 0,
+                isLoading = isLoading,
+                confirming = confirming,
+            )
+        ) {
+            if (apps != null && apps.isEmpty()) {
+                showPaymentError(
+                    raw = context.getString(R.string.sub_no_upi),
+                    onRetry = { startSubscription() },
+                )
+            }
+            return@start
+        }
+        val phoneForApi = phone.trim()
+        if (phoneForApi.isBlank()) {
+            showPaymentError(raw = "session_expired", onRetry = { navigateBackToLogin() })
+            return@start
+        }
+        isLoading = true
+        scope.launch {
+            CashfreeSubscriptionRepository.createSubscription(phoneForApi).fold(
+                onSuccess = { created ->
+                    if (created.alreadyExists && created.status.equals("active", ignoreCase = true)) {
+                        isLoading = false
+                        verifyAndUnlock()
+                        return@launch
+                    }
+                    val subscriptionId = created.subscriptionId
+                    val sessionId = created.subscriptionSessionId
+                    if (subscriptionId.isNullOrBlank() || sessionId.isNullOrBlank()) {
+                        showPaymentError(
+                            raw = context.getString(R.string.sub_start_failed),
+                            onRetry = { startSubscription() },
+                        )
+                        return@launch
+                    }
+                    pendingSession = PendingCashfreeSession(subscriptionId, sessionId)
+                    // Direct launch — no Cancel / overlay step.
+                    launchUpiApp(selected)
+                },
+                onFailure = { e ->
+                    Log.e(TAG, "create-subscription failed", e)
+                    showPaymentError(raw = e.message, throwable = e, onRetry = { startSubscription() })
+                },
+            )
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -488,10 +527,24 @@ fun SubscriptionScreen(navController: NavController) {
                         .padding(bottom = if (tight) 8.dp else 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    InlineUpiAppSelector(
+                        apps = installedUpiApps,
+                        selectedPackageName = selectedUpiPackage,
+                        onSelect = { selectedUpiPackage = it },
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                    val ctaEnabled = !showTrialSuccessScreen &&
+                        canStartTrialPayment(
+                            selectedPackageName = selectedUpiPackage,
+                            appsLoading = installedUpiApps == null,
+                            installedCount = installedUpiApps?.size ?: 0,
+                            isLoading = isLoading,
+                            confirming = confirming,
+                        )
                     PremiumGradientCtaButton(
                         text = stringResource(R.string.sub_cta, SubscriptionPricing.AUTHORIZATION_AMOUNT),
                         onClick = { startSubscription() },
-                        enabled = !showTrialSuccessScreen && !confirming && !showUpiPicker,
+                        enabled = ctaEnabled,
                         loading = isLoading,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -538,20 +591,6 @@ fun SubscriptionScreen(navController: NavController) {
             soft = false,
             onContinueInBackground = { confirming = false },
         )
-
-        if (showUpiPicker) {
-            UpiAppPickerOverlay(
-                onAppSelected = { packageName -> launchUpiApp(packageName) },
-                onDismiss = { showUpiPicker = false },
-                onNoUpiAppsAvailable = {
-                    showUpiPicker = false
-                    showPaymentError(
-                        raw = "कोई UPI app नहीं मिला। UPI app install करके फिर कोशिश करें।",
-                        onRetry = { startSubscription() },
-                    )
-                },
-            )
-        }
 
         PaymentErrorAlertDialog(
             state = paymentErrorDialog,

@@ -8,4 +8,6 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="window_background">#F5F8F7</color>
+    <!-- Cold-start / splash canvas — emerald, never white -->
+    <color name="splash_background">#064E3B</color>
 </resources>

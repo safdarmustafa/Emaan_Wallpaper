@@ -22,9 +22,11 @@ class MainActivity : AppCompatActivity(), CFSubscriptionResponseCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val canvas = ColorDrawable(ContextCompat.getColor(this, R.color.window_background))
-        window.setBackgroundDrawable(canvas)
-        window.decorView.background = canvas
+        if (savedInstanceState == null) {
+            val emerald = ContextCompat.getColor(this, R.color.splash_background)
+            window.statusBarColor = emerald
+            window.navigationBarColor = emerald
+        }
 
         enableEdgeToEdge()
 
@@ -40,6 +42,11 @@ class MainActivity : AppCompatActivity(), CFSubscriptionResponseCallback {
                     AppNavGraph()
                 }
             }
+        }
+
+        window.decorView.post {
+            val cream = ColorDrawable(ContextCompat.getColor(this, R.color.window_background))
+            window.setBackgroundDrawable(cream)
         }
     }
 

@@ -1,5 +1,10 @@
 <resources>
     <string name="app_name">Emaan Wallpapers</string>
+    <string name="splash_tagline">Your Complete Islamic Media App</string>
+    <string name="splash_feature_wallpapers">Islamic Wallpapers</string>
+    <string name="splash_feature_reels">Islamic Reels &amp; Videos</string>
+    <string name="splash_feature_ringtones">Islamic Ringtones &amp; Adhan</string>
+    <string name="splash_feature_share">Share on WhatsApp</string>
     <string name="facebook_app_id">1031255929862186</string>
 
     <string name="facebook_client_token">39a4c0ae5d207b2429b0bac59c71b1bb</string>
@@ -73,6 +78,7 @@
     <string name="sub_feature_reels">Islamic reels</string>
     <string name="sub_feature_reels_sub">Watch and share</string>
     <string name="sub_cta">Start today for ₹%1$d</string>
+    <string name="sub_pay_with">Pay with</string>
     <string name="sub_secure">Secure payment</string>
     <string name="sub_terms">View subscription terms</string>
     <string name="sub_no_upi">No UPI app found. Install a UPI app and try again.</string>

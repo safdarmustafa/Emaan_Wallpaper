@@ -1,7 +1,5 @@
 package com.squarenova.emaanwallpapers.ui.language
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,7 +24,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,10 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.i18n.AppLanguage
-import com.squarenova.emaanwallpapers.i18n.LANGUAGE_COVER_FADE_MS
-import com.squarenova.emaanwallpapers.i18n.LANGUAGE_COVER_HOLD_MS
 import com.squarenova.emaanwallpapers.i18n.localizedContextForTag
-import com.squarenova.emaanwallpapers.i18n.shouldShowLanguageSwitchCover
 import com.squarenova.emaanwallpapers.theme.AppBackground
 import com.squarenova.emaanwallpapers.theme.AppTextPrimary
 import com.squarenova.emaanwallpapers.theme.AppTextSecondary
@@ -58,39 +52,13 @@ import com.squarenova.emaanwallpapers.theme.ProfileEmerald
 import com.squarenova.emaanwallpapers.theme.ProfileEmeraldLight
 import com.squarenova.emaanwallpapers.theme.ProfileGold
 import com.squarenova.emaanwallpapers.theme.ProfileGoldLight
-import kotlinx.coroutines.delay
 
 @Composable
 fun LanguageChangeFade(content: @Composable () -> Unit) {
     val tag = AppLanguage.currentTag()
-    // Keep Activity as LocalContext — overriding it with createConfigurationContext
-    // drops LocalActivityResultRegistryOwner and crashes Profile (gallery picker).
     val baseContext = LocalContext.current
     val localizedConfig = remember(tag, baseContext) {
         localizedContextForTag(baseContext, tag).resources.configuration
-    }
-
-    var previousTag by remember { mutableStateOf<String?>(null) }
-    var isFirstComposition by remember { mutableStateOf(true) }
-    val coverAlpha = remember { Animatable(0f) }
-
-    LaunchedEffect(tag) {
-        val showCover = shouldShowLanguageSwitchCover(
-            isFirstComposition = isFirstComposition,
-            previousTag = previousTag,
-            newTag = tag,
-        )
-        previousTag = tag
-        isFirstComposition = false
-        if (!showCover) return@LaunchedEffect
-
-        // Cream cover only — never black — while strings/layout recompose.
-        coverAlpha.snapTo(1f)
-        delay(LANGUAGE_COVER_HOLD_MS)
-        coverAlpha.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(LANGUAGE_COVER_FADE_MS),
-        )
     }
 
     CompositionLocalProvider(
@@ -102,13 +70,6 @@ fun LanguageChangeFade(content: @Composable () -> Unit) {
                 .background(AppBackground),
         ) {
             content()
-            if (coverAlpha.value > 0.01f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(AppBackground.copy(alpha = coverAlpha.value)),
-                )
-            }
         }
     }
 }

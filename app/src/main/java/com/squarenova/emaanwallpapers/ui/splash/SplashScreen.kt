@@ -1,28 +1,19 @@
 package com.squarenova.emaanwallpapers.ui.splash
 
 import android.util.Log
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.R
@@ -35,83 +26,43 @@ import com.squarenova.emaanwallpapers.data.UserAccountLookup
 import com.squarenova.emaanwallpapers.data.UserAccountQueries
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.Serializable
+
+/** Matches splash art emerald so letterbox bars (if any) blend in. */
+private val SplashCanvas = Color(0xFF064E3B)
+
+/** Short floor so art is visible; work runs in parallel — no artificial 2–3s wait. */
+private const val MIN_SPLASH_MS = 450L
 
 @Serializable
 private data class SubscriptionUserRow(
     val phone_number: String? = null,
 )
 
+private sealed interface SplashRoute {
+    data object Login : SplashRoute
+    data object ProfileSetup : SplashRoute
+    data object Home : SplashRoute
+    data object Subscription : SplashRoute
+}
+
 @Composable
 fun SplashScreen(navController: NavController) {
     val context = LocalContext.current
     val dataStoreManager = DataStoreManager(context)
-    val alphaAnim = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        try {
-            alphaAnim.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(1200),
-            )
-            delay(1200)
-
-            val loggedIn = dataStoreManager.isLoggedIn.first()
-            val profileCompleted = dataStoreManager.isProfileCompleted.first()
-
-            when {
-                !loggedIn -> {
-                    navController.navigate("login") {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                    return@LaunchedEffect
-                }
-
-                loggedIn && !profileCompleted -> {
-                    navController.navigate("profile_setup") {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                    return@LaunchedEffect
-                }
-            }
-
-            val phone = dataStoreManager.phoneNumber.firstOrNull()
-            if (phone.isNullOrBlank()) {
-                navController.navigate("login") {
-                    popUpTo("splash") { inclusive = true }
-                }
-                return@LaunchedEffect
-            }
-
-            AnalyticsManager.identify(phone)
-
-            val cachedSubscribed = try {
-                dataStoreManager.isSubscribed.first()
-            } catch (_: Exception) {
-                false
-            }
-
-            when (UserAccountQueries.lookupByPhone<SubscriptionUserRow>(phone)) {
-                UserAccountLookup.Missing -> {
-                    LocalSession.clear(context)
-                    navController.navigate("login") {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                    return@LaunchedEffect
-                }
-
-                UserAccountLookup.Unreachable,
-                is UserAccountLookup.Found -> {
-                    routeLoggedInUser(
-                        navController = navController,
-                        phone = phone,
-                        cachedSubscribed = cachedSubscribed,
-                        dataStoreManager = dataStoreManager,
-                    )
-                }
+        val route = try {
+            coroutineScope {
+                val work = async { resolveStartupRoute(context, dataStoreManager) }
+                // Show art briefly while routing work runs — do not block on long animations.
+                delay(MIN_SPLASH_MS)
+                work.await()
             }
         } catch (e: Exception) {
             if (BuildConfig.DEBUG) {
@@ -123,59 +74,80 @@ fun SplashScreen(navController: NavController) {
             } catch (_: Exception) {
                 false
             }
-            if (fallbackLoggedIn) {
-                navController.navigate("subscription") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            } else {
-                navController.navigate("login") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            }
+            if (fallbackLoggedIn) SplashRoute.Subscription else SplashRoute.Login
+        }
+
+        val destination = when (route) {
+            SplashRoute.Login -> "login"
+            SplashRoute.ProfileSetup -> "profile_setup"
+            SplashRoute.Home -> "home"
+            SplashRoute.Subscription -> "subscription"
+        }
+        navController.navigate(destination) {
+            popUpTo("splash") { inclusive = true }
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Full artwork visible — Fit never crops edges; emerald fills any side gaps.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SplashCanvas),
+        contentAlignment = Alignment.Center,
+    ) {
         Image(
-            painter = painterResource(id = R.drawable.mosque),
-            contentDescription = null,
+            painter = painterResource(id = R.drawable.splash_brand),
+            contentDescription = stringResource(R.string.app_name),
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF064E3B).copy(alpha = 0.6f)),
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .graphicsLayer(alpha = alphaAnim.value),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = "Emaan Wallpapers",
-                fontSize = 28.sp,
-                color = Color.White,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Where Faith Meets Beauty",
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.8f),
+    }
+}
+
+private suspend fun resolveStartupRoute(
+    context: android.content.Context,
+    dataStoreManager: DataStoreManager,
+): SplashRoute {
+    val loggedIn = dataStoreManager.isLoggedIn.first()
+    val profileCompleted = dataStoreManager.isProfileCompleted.first()
+
+    when {
+        !loggedIn -> return SplashRoute.Login
+        loggedIn && !profileCompleted -> return SplashRoute.ProfileSetup
+    }
+
+    val phone = dataStoreManager.phoneNumber.firstOrNull()
+    if (phone.isNullOrBlank()) return SplashRoute.Login
+
+    AnalyticsManager.identify(phone)
+
+    val cachedSubscribed = try {
+        dataStoreManager.isSubscribed.first()
+    } catch (_: Exception) {
+        false
+    }
+
+    return when (UserAccountQueries.lookupByPhone<SubscriptionUserRow>(phone)) {
+        UserAccountLookup.Missing -> {
+            LocalSession.clear(context)
+            SplashRoute.Login
+        }
+        UserAccountLookup.Unreachable,
+        is UserAccountLookup.Found -> {
+            routeLoggedInUser(
+                phone = phone,
+                cachedSubscribed = cachedSubscribed,
+                dataStoreManager = dataStoreManager,
             )
         }
     }
 }
 
 private suspend fun routeLoggedInUser(
-    navController: NavController,
     phone: String,
     cachedSubscribed: Boolean,
     dataStoreManager: DataStoreManager,
-) {
-    // Cashfree subscription-status (via EntitlementRepository) is the only premium source;
-    // offline it falls back to the cached value.
+): SplashRoute {
     val hasPremium = UserSubscriptionSyncManager(dataStoreManager).syncUserSubscription(phone)
     val status = EntitlementRepository.lastStatus
     if (BuildConfig.DEBUG) {
@@ -193,10 +165,7 @@ private suspend fun routeLoggedInUser(
             trialEnd = EntitlementRepository.subscription.value?.endDate,
             hasPremiumAccess = true,
         )
-        navController.navigate("home") {
-            popUpTo("splash") { inclusive = true }
-        }
-        return
+        return SplashRoute.Home
     }
 
     if (status?.lowercase() == "expired") {
@@ -212,7 +181,5 @@ private suspend fun routeLoggedInUser(
         trialEnd = EntitlementRepository.subscription.value?.endDate,
         hasPremiumAccess = false,
     )
-    navController.navigate("subscription") {
-        popUpTo("splash") { inclusive = true }
-    }
+    return SplashRoute.Subscription
 }

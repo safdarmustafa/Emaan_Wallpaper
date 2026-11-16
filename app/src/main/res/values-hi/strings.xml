@@ -6,6 +6,11 @@
     <string name="language_hindi">हिंदी</string>
     <string name="language_menu_subtitle_en">English</string>
     <string name="language_menu_subtitle_hi">हिंदी</string>
+    <string name="splash_tagline">आपका पूरा इस्लामिक मीडिया ऐप</string>
+    <string name="splash_feature_wallpapers">इस्लामिक वॉलपेपर</string>
+    <string name="splash_feature_reels">इस्लामिक रील्स और वीडियो</string>
+    <string name="splash_feature_ringtones">इस्लामिक रिंगटोन और अज़ान</string>
+    <string name="splash_feature_share">WhatsApp पर शेयर करें</string>
 
     <string name="nav_wallpapers">वॉलपेपर</string>
     <string name="nav_reels">रील्स</string>
@@ -69,6 +74,7 @@
     <string name="sub_feature_reels">इस्लामिक रील्स</string>
     <string name="sub_feature_reels_sub">देखें और शेयर करें</string>
     <string name="sub_cta">₹%1$d देकर आज ही शुरू करें</string>
+    <string name="sub_pay_with">इससे भुगतान करें</string>
     <string name="sub_secure">सुरक्षित भुगतान</string>
     <string name="sub_terms">सब्सक्रिप्शन शर्तें देखें</string>
     <string name="sub_no_upi">कोई UPI ऐप नहीं मिला। UPI ऐप इंस्टॉल करके फिर कोशिश करें।</string>
