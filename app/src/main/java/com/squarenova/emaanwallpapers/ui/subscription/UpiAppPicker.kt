@@ -19,10 +19,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -108,6 +116,147 @@ fun InlineUpiAppSelector(
     }
 }
 
+/**
+ * Compact UPI picker for the floating paywall footer (matches the reference bar).
+ */
+@Composable
+fun PaywallUpiDropdown(
+    apps: List<InstalledUpiApp>?,
+    selectedPackageName: String?,
+    onSelect: (packageName: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = apps?.firstOrNull { it.packageName == selectedPackageName } ?: apps?.firstOrNull()
+    val shape = RoundedCornerShape(14.dp)
+
+    Box(modifier = modifier) {
+        when {
+            apps == null -> {
+                Box(
+                    modifier = Modifier
+                        .height(56.dp)
+                        .width(132.dp)
+                        .clip(shape)
+                        .background(PremiumSubscriptionColors.SurfaceMuted),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        color = PremiumSubscriptionColors.Gold,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            apps.isEmpty() -> {
+                Text(
+                    text = stringResource(R.string.sub_no_upi),
+                    color = PremiumSubscriptionColors.TextSecondary,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    modifier = Modifier.width(148.dp),
+                )
+            }
+            selected != null -> {
+                Row(
+                    modifier = Modifier
+                        .height(56.dp)
+                        .clip(shape)
+                        .background(PremiumSubscriptionColors.Surface)
+                        .border(1.dp, PremiumSubscriptionColors.BorderSubtle, shape)
+                        .clickable { expanded = true }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    UpiAppIcon(app = selected, size = 32.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = selected.displayName,
+                        color = PremiumSubscriptionColors.TextPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.width(80.dp),
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = PremiumSubscriptionColors.TextMuted,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    apps.forEach { app ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    UpiAppIcon(app = app, size = 24.dp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = app.displayName,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (app.packageName == selectedPackageName) {
+                                            FontWeight.SemiBold
+                                        } else {
+                                            FontWeight.Medium
+                                        },
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onSelect(app.packageName)
+                                expanded = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpiAppIcon(
+    app: InstalledUpiApp,
+    size: androidx.compose.ui.unit.Dp,
+) {
+    val iconBitmap = remember(app.iconBase64) {
+        runCatching {
+            if (app.iconBase64.isBlank()) return@runCatching null
+            val bytes = Base64.decode(app.iconBase64, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    if (iconBitmap != null) {
+        Image(
+            bitmap = iconBitmap,
+            contentDescription = null,
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(8.dp)),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(8.dp))
+                .background(PremiumSubscriptionColors.SurfaceMuted),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = app.displayName.take(1).uppercase(),
+                color = PremiumSubscriptionColors.Forest,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+            )
+        }
+    }
+}
+
 @Composable
 private fun UpiAppChip(
     app: InstalledUpiApp,
@@ -126,14 +275,6 @@ private fun UpiAppChip(
         PremiumSubscriptionColors.Surface
     }
 
-    val iconBitmap = remember(app.iconBase64) {
-        runCatching {
-            if (app.iconBase64.isBlank()) return@runCatching null
-            val bytes = Base64.decode(app.iconBase64, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        }.getOrNull()
-    }
-
     Row(
         modifier = Modifier
             .clip(shape)
@@ -143,30 +284,7 @@ private fun UpiAppChip(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (iconBitmap != null) {
-            Image(
-                bitmap = iconBitmap,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(PremiumSubscriptionColors.SurfaceMuted),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = app.displayName.take(1).uppercase(),
-                    color = PremiumSubscriptionColors.Forest,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                )
-            }
-        }
+        UpiAppIcon(app = app, size = 28.dp)
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = app.displayName,

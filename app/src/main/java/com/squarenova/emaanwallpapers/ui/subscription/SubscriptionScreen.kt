@@ -3,30 +3,31 @@ package com.squarenova.emaanwallpapers.ui.subscription
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.min
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.NightsStay
-import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material.icons.outlined.Wallpaper
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,21 +45,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.squarenova.emaanwallpapers.R
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
-import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
+import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
@@ -83,6 +86,9 @@ private const val VERIFY_POLL_INTERVAL_MS = 3_000L
 
 /** Gives the Cashfree callback a chance to arrive before ON_RESUME falls back to polling. */
 private const val RESUME_VERIFY_DELAY_MS = 1_500L
+
+/** Same video frame shape on every phone (width / height). */
+private const val PAYWALL_VIDEO_ASPECT_RATIO = 1.05f
 
 private data class PendingCashfreeSession(
     val subscriptionId: String,
@@ -380,201 +386,174 @@ fun SubscriptionScreen(navController: NavController) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val ctaEnabled = !showTrialSuccessScreen &&
+        canStartTrialPayment(
+            selectedPackageName = selectedUpiPackage,
+            appsLoading = installedUpiApps == null,
+            installedCount = installedUpiApps?.size ?: 0,
+            isLoading = isLoading,
+            confirming = confirming,
+        )
+
     Box(modifier = Modifier.fillMaxSize()) {
         PremiumScreenBackground()
 
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val compact = maxHeight < 680.dp
-            val tight = maxHeight < 600.dp
-            val priceSize = when {
-                tight -> 44.sp
-                compact -> 52.sp
-                else -> 60.sp
-            }
-            val titleSize = when {
-                tight -> 24.sp
-                compact -> 28.sp
-                else -> 32.sp
-            }
-
+        // Top block flexes (video). Bottom stack is tight:
+        // features → legal links → UPI + Start Free Trial (no gap).
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding(),
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .widthIn(max = 420.dp)
+                    .padding(horizontal = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = if (tight) 2.dp else 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(top = 2.dp),
                 ) {
                     IconButton(
                         onClick = { leavePaywall() },
                         colors = IconButtonDefaults.iconButtonColors(
                             contentColor = PremiumSubscriptionColors.TextPrimary,
+                            containerColor = Color.White.copy(alpha = 0.55f),
                         ),
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .size(36.dp),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.sub_back),
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(20.dp),
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.sub_title),
-                        color = PremiumSubscriptionColors.TextPrimary,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
                 }
 
-                Column(
+                BoxWithConstraints(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = if (tight) Arrangement.Center else Arrangement.SpaceEvenly,
+                        .weight(1f, fill = true)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val idealHeight = maxWidth / PAYWALL_VIDEO_ASPECT_RATIO
+                    val videoHeight = min(idealHeight, maxHeight)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(videoHeight),
+                    ) {
+                        PaywallPreviewVideo(
+                            videoUrl = PAYWALL_PREVIEW_VIDEO_URL,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                         Box(
                             modifier = Modifier
-                                .size(if (tight) 48.dp else 56.dp)
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 8.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
-                                .background(PremiumSubscriptionColors.Gold.copy(alpha = 0.10f)),
+                                .background(Color.White.copy(alpha = 0.92f)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.NightsStay,
-                                contentDescription = null,
-                                tint = PremiumSubscriptionColors.Gold,
-                                modifier = Modifier.size(if (tight) 22.dp else 26.dp),
+                                imageVector = Icons.Outlined.MenuBook,
+                                contentDescription = stringResource(R.string.sub_video_cd),
+                                tint = PremiumSubscriptionColors.Forest,
+                                modifier = Modifier.size(20.dp),
                             )
                         }
-                        Spacer(modifier = Modifier.height(if (tight) 10.dp else 16.dp))
-                        Text(
-                            text = stringResource(R.string.sub_headline),
-                            color = PremiumSubscriptionColors.TextPrimary,
-                            fontSize = titleSize,
-                            fontWeight = FontWeight.Medium,
-                            letterSpacing = 0.4.sp,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.sub_pitch),
-                            color = PremiumSubscriptionColors.TextSecondary,
-                            fontSize = 14.sp,
-                            lineHeight = 21.sp,
-                            fontWeight = FontWeight.Normal,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = stringResource(R.string.sub_only),
-                            color = PremiumSubscriptionColors.TextMuted,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Normal,
-                            letterSpacing = 0.8.sp,
-                        )
-                        Text(
-                            text = "₹${SubscriptionPricing.AUTHORIZATION_AMOUNT}",
-                            color = PremiumSubscriptionColors.TextPrimary,
-                            fontSize = priceSize,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-1).sp,
-                        )
-                        Text(
-                            text = stringResource(R.string.sub_start_today),
-                            color = PremiumSubscriptionColors.TextSecondary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal,
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        SubscriptionBenefit(
-                            icon = Icons.Outlined.Wallpaper,
-                            title = stringResource(R.string.sub_feature_wallpapers),
-                            subtitle = stringResource(R.string.sub_feature_wallpapers_sub),
-                            compact = compact,
-                        )
-                        SubscriptionBenefit(
-                            icon = Icons.Outlined.MusicNote,
-                            title = stringResource(R.string.sub_feature_ringtones),
-                            subtitle = stringResource(R.string.sub_feature_ringtones_sub),
-                            compact = compact,
-                        )
-                        SubscriptionBenefit(
-                            icon = Icons.Outlined.PlayCircle,
-                            title = stringResource(R.string.sub_feature_reels),
-                            subtitle = stringResource(R.string.sub_feature_reels_sub),
-                            compact = compact,
-                        )
                     }
                 }
 
-                Column(
+                Spacer(modifier = Modifier.height(8.dp))
+
+                PaywallHeadlineBanner(text = stringResource(R.string.sub_headline))
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "₹${SubscriptionPricing.AUTHORIZATION_AMOUNT}",
+                    color = PremiumSubscriptionColors.Forest,
+                    fontSize = 68.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-2).sp,
+                    maxLines = 1,
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = stringResource(
+                        R.string.sub_start_today,
+                        SubscriptionPricing.AUTHORIZATION_AMOUNT,
+                    ),
+                    color = PremiumSubscriptionColors.TextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 420.dp)
+                    .padding(horizontal = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Image(
+                    painter = painterResource(id = R.drawable.paywall_feature_cards),
+                    contentDescription = null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = if (tight) 8.dp else 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                        .heightIn(max = 120.dp)
+                        .padding(horizontal = 2.dp),
+                    contentScale = ContentScale.Fit,
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                PaywallLegalLinksRow()
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(10.dp, RoundedCornerShape(22.dp), clip = false)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color.White)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    InlineUpiAppSelector(
+                    PaywallUpiDropdown(
                         apps = installedUpiApps,
                         selectedPackageName = selectedUpiPackage,
                         onSelect = { selectedUpiPackage = it },
-                        modifier = Modifier.padding(bottom = 12.dp),
                     )
-                    val ctaEnabled = !showTrialSuccessScreen &&
-                        canStartTrialPayment(
-                            selectedPackageName = selectedUpiPackage,
-                            appsLoading = installedUpiApps == null,
-                            installedCount = installedUpiApps?.size ?: 0,
-                            isLoading = isLoading,
-                            confirming = confirming,
-                        )
+                    Spacer(modifier = Modifier.width(12.dp))
                     PremiumGradientCtaButton(
-                        text = stringResource(R.string.sub_cta, SubscriptionPricing.AUTHORIZATION_AMOUNT),
+                        text = stringResource(R.string.sub_cta),
                         onClick = { startSubscription() },
                         enabled = ctaEnabled,
                         loading = isLoading,
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.Lock,
-                            contentDescription = null,
-                            tint = PremiumSubscriptionColors.TextMuted,
-                            modifier = Modifier.size(13.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.sub_secure),
-                            color = PremiumSubscriptionColors.TextMuted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                        )
-                    }
-                    TextButton(
-                        onClick = { LegalUrlOpener.openSubscriptionDisclosure(context) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.sub_terms),
-                            color = PremiumSubscriptionColors.TextMuted,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Normal,
-                        )
-                    }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
@@ -596,6 +575,41 @@ fun SubscriptionScreen(navController: NavController) {
             state = paymentErrorDialog,
             onDismiss = { paymentErrorDialog = null },
         )
+    }
+}
+
+@Composable
+private fun PaywallLegalLinksRow() {
+    val context = LocalContext.current
+    val linkColor = PremiumSubscriptionColors.TextMuted
+    val links = listOf(
+        stringResource(R.string.sub_terms) to { LegalUrlOpener.openTermsAndConditions(context) },
+        stringResource(R.string.sub_privacy) to { LegalUrlOpener.openPrivacyPolicy(context) },
+        stringResource(R.string.sub_refund) to { LegalUrlOpener.openSubscriptionDisclosure(context) },
+        stringResource(R.string.sub_use_of_ai) to { LegalUrlOpener.openPrivacyPolicy(context) },
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        links.forEachIndexed { index, (label, onClick) ->
+            if (index > 0) {
+                Text(
+                    text = stringResource(R.string.sub_legal_dot),
+                    color = linkColor,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+            Text(
+                text = label,
+                color = linkColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.clickable(onClick = onClick),
+            )
+        }
     }
 }
 
@@ -655,40 +669,3 @@ private fun SubscriptionConfirmingOverlay(
     }
 }
 
-@Composable
-private fun SubscriptionBenefit(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    compact: Boolean,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(104.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = PremiumSubscriptionColors.Gold,
-            modifier = Modifier.size(if (compact) 20.dp else 22.dp),
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = title,
-            color = PremiumSubscriptionColors.TextPrimary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            lineHeight = 16.sp,
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = subtitle,
-            color = PremiumSubscriptionColors.TextMuted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Normal,
-            textAlign = TextAlign.Center,
-            lineHeight = 14.sp,
-        )
-    }
-}

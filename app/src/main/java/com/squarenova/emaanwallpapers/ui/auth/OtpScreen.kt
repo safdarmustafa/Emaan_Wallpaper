@@ -128,16 +128,22 @@ fun OtpScreen(
                     "Post-login subscription sync: subscribed=$isSubscribed"
                 )
 
-                val result = SupabaseClient.client
-                    .postgrest["users"]
-                    .select {
-                        filter {
-                            eq("phone_number", phone)
+                // Profile lookup is best-effort: a missing/new user should go to setup,
+                // not block login after a successful OTP verify.
+                val existingUser = try {
+                    SupabaseClient.client
+                        .postgrest["users"]
+                        .select {
+                            filter {
+                                eq("phone_number", normalizedPhone)
+                            }
                         }
-                    }
-                    .decodeList<UserRow>()
-
-                val existingUser = result.firstOrNull()
+                        .decodeList<UserRow>()
+                        .firstOrNull()
+                } catch (e: Exception) {
+                    SecureLog.e("OTP_SCREEN", "users lookup failed after OTP", e)
+                    null
+                }
 
                 if (existingUser != null && !existingUser.first_name.isNullOrEmpty()) {
                     dataStoreManager.setProfileCompleted()

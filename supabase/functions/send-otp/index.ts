@@ -31,13 +31,25 @@ serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey = Deno.env.get("SERVICE_ROLE_KEY");
+    // Prefer platform-injected key; keep SERVICE_ROLE_KEY as optional alias.
+    const serviceKey =
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_ROLE_KEY");
     const fast2smsKey = Deno.env.get("FAST2SMS_API_KEY");
-    if (!supabaseUrl || !serviceKey || !fast2smsKey) {
-      return new Response(JSON.stringify({ error: "Server configuration missing" }), {
-        status: 503,
-        headers: jsonHeaders,
-      });
+    const missing = [
+      !supabaseUrl ? "SUPABASE_URL" : null,
+      !serviceKey ? "SUPABASE_SERVICE_ROLE_KEY" : null,
+      !fast2smsKey ? "FAST2SMS_API_KEY" : null,
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      return new Response(
+        JSON.stringify({
+          error: `Server configuration missing: ${missing.join(", ")}`,
+        }),
+        {
+          status: 503,
+          headers: jsonHeaders,
+        },
+      );
     }
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
