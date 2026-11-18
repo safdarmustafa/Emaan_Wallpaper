@@ -117,7 +117,7 @@ fun InlineUpiAppSelector(
 }
 
 /**
- * Compact UPI picker for the floating paywall footer (matches the reference bar).
+ * Compact UPI picker for the paywall footer — same height/radius as the CTA.
  */
 @Composable
 fun PaywallUpiDropdown(
@@ -128,23 +128,24 @@ fun PaywallUpiDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = apps?.firstOrNull { it.packageName == selectedPackageName } ?: apps?.firstOrNull()
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(PaywallFooterActionRadius)
 
     Box(modifier = modifier) {
         when {
             apps == null -> {
                 Box(
                     modifier = Modifier
-                        .height(56.dp)
-                        .width(132.dp)
+                        .height(PaywallFooterActionHeight)
+                        .width(76.dp)
                         .clip(shape)
-                        .background(PremiumSubscriptionColors.SurfaceMuted),
+                        .background(PremiumSubscriptionColors.SurfaceMuted)
+                        .border(1.dp, PremiumSubscriptionColors.BorderSubtle, shape),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
                         color = PremiumSubscriptionColors.Gold,
                         strokeWidth = 2.dp,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
@@ -160,30 +161,23 @@ fun PaywallUpiDropdown(
             selected != null -> {
                 Row(
                     modifier = Modifier
-                        .height(56.dp)
+                        .height(PaywallFooterActionHeight)
+                        .width(76.dp)
                         .clip(shape)
-                        .background(PremiumSubscriptionColors.Surface)
+                        .background(PremiumSubscriptionColors.SurfaceMuted)
                         .border(1.dp, PremiumSubscriptionColors.BorderSubtle, shape)
                         .clickable { expanded = true }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    UpiAppIcon(app = selected, size = 32.dp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = selected.displayName,
-                        color = PremiumSubscriptionColors.TextPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.width(80.dp),
-                    )
+                    UpiAppIcon(app = selected, size = 28.dp)
+                    Spacer(modifier = Modifier.width(2.dp))
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
-                        contentDescription = null,
+                        contentDescription = selected.displayName,
                         tint = PremiumSubscriptionColors.TextMuted,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
                 DropdownMenu(

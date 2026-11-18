@@ -86,6 +86,8 @@
     <string name="sub_use_of_ai">Use of AI</string>
     <string name="sub_legal_dot">·</string>
     <string name="sub_video_cd">Premium preview video</string>
+    <string name="sub_video_pause">Pause preview</string>
+    <string name="sub_video_play">Play preview</string>
     <string name="sub_no_upi">No UPI app found. Install a UPI app and try again.</string>
     <string name="sub_confirming_short">Confirming your subscription…</string>
     <string name="sub_confirming">Your subscription is being confirmed…</string>

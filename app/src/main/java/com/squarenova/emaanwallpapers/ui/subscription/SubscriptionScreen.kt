@@ -22,12 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.min
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -446,32 +444,12 @@ fun SubscriptionScreen(navController: NavController) {
                 ) {
                     val idealHeight = maxWidth / PAYWALL_VIDEO_ASPECT_RATIO
                     val videoHeight = min(idealHeight, maxHeight)
-                    Box(
+                    PaywallPreviewVideo(
+                        videoUrl = PAYWALL_PREVIEW_VIDEO_URL,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(videoHeight),
-                    ) {
-                        PaywallPreviewVideo(
-                            videoUrl = PAYWALL_PREVIEW_VIDEO_URL,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 8.dp)
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.92f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.MenuBook,
-                                contentDescription = stringResource(R.string.sub_video_cd),
-                                tint = PremiumSubscriptionColors.Forest,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -532,10 +510,10 @@ fun SubscriptionScreen(navController: NavController) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .shadow(10.dp, RoundedCornerShape(22.dp), clip = false)
-                        .clip(RoundedCornerShape(22.dp))
+                        .shadow(12.dp, RoundedCornerShape(20.dp), clip = false)
+                        .clip(RoundedCornerShape(20.dp))
                         .background(Color.White)
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PaywallUpiDropdown(
@@ -543,7 +521,7 @@ fun SubscriptionScreen(navController: NavController) {
                         selectedPackageName = selectedUpiPackage,
                         onSelect = { selectedUpiPackage = it },
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     PremiumGradientCtaButton(
                         text = stringResource(R.string.sub_cta),
                         onClick = { startSubscription() },

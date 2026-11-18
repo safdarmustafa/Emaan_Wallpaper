@@ -82,6 +82,8 @@
     <string name="sub_use_of_ai">AI का उपयोग</string>
     <string name="sub_legal_dot">·</string>
     <string name="sub_video_cd">प्रीमियम प्रीव्यू वीडियो</string>
+    <string name="sub_video_pause">प्रीव्यू रोकें</string>
+    <string name="sub_video_play">प्रीव्यू चलाएँ</string>
     <string name="sub_no_upi">कोई UPI ऐप नहीं मिला। UPI ऐप इंस्टॉल करके फिर कोशिश करें।</string>
     <string name="sub_confirming_short">सब्सक्रिप्शन अभी कन्फर्म हो रहा है…</string>
     <string name="sub_confirming">आपका सब्सक्रिप्शन कन्फर्म हो रहा है…</string>

@@ -16,8 +16,8 @@ android {
         applicationId = "com.squarenova.emaanwallpapers"
         minSdk = 24
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.2.2"
+        versionCode = 17
+        versionName = "1.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
