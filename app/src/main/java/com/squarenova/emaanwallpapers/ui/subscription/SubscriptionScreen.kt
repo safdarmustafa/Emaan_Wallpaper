@@ -217,12 +217,7 @@ fun SubscriptionScreen(navController: NavController) {
             if (hasPremium) {
                 pendingSession = null
                 paymentErrorDialog = null
-                AnalyticsManager.trackPurchaseOnce(
-                    key = "trial_purchase",
-                    amount = SubscriptionPricing.AUTHORIZATION_AMOUNT.toDouble(),
-                    currency = SubscriptionPricing.CURRENCY,
-                    props = mapOf("phone" to phoneForApi),
-                )
+                // Meta Purchase (₹3 AUTH) is webhook-only to avoid double-counting.
                 AnalyticsManager.trackOnce(
                     key = "trial_paid",
                     eventName = AnalyticsEvents.TRIAL_PAID,
@@ -348,12 +343,7 @@ fun SubscriptionScreen(navController: NavController) {
                     if (phoneForApi.isNotBlank() && EntitlementRepository.refreshDetailed(phoneForApi).hasPremium) {
                         paymentErrorDialog = null
                         pendingSession = null
-                        AnalyticsManager.trackPurchaseOnce(
-                            key = "trial_purchase",
-                            amount = SubscriptionPricing.AUTHORIZATION_AMOUNT.toDouble(),
-                            currency = SubscriptionPricing.CURRENCY,
-                            props = mapOf("phone" to phoneForApi),
-                        )
+                        // Meta Purchase (₹3 AUTH) is webhook-only to avoid double-counting.
                         AnalyticsManager.trackOnce(
                             key = "trial_paid",
                             eventName = AnalyticsEvents.TRIAL_PAID,
