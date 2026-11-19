@@ -143,6 +143,12 @@ fun SubscriptionScreen(navController: NavController) {
                 Log.i(TAG, "Valid Cashfree entitlement on entry — routing to home")
                 goHome()
             }
+            else -> {
+                AnalyticsManager.track(
+                    eventName = AnalyticsEvents.SUBSCRIPTION_SCREEN_VIEWED,
+                    props = mapOf("phone" to phone),
+                )
+            }
         }
     }
 

@@ -12,6 +12,9 @@ object AnalyticsEvents {
     const val SUBSCRIPTION_CANCELLED = "subscription_cancelled"
     const val TRIAL_EXPIRED = "trial_expired"
 
+    /** Mixpanel: user sees the subscription / paywall screen. */
+    const val SUBSCRIPTION_SCREEN_VIEWED = "subscription_screen_viewed"
+
     /** Mixpanel: first process launch on this device. Meta uses SDK ActivateApp for install. */
     const val APP_INSTALL = "App Install"
 
