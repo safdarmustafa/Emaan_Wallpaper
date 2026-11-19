@@ -16,8 +16,8 @@ android {
         applicationId = "com.squarenova.emaanwallpapers"
         minSdk = 24
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.2.3"
+        versionCode = 18
+        versionName = "1.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -80,6 +80,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // Google Play: 16 KB memory page size (newer Android hardware).
+    // Keep native libs uncompressed + properly aligned in the App Bundle/APK.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 }
 
