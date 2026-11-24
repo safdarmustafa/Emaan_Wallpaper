@@ -7,25 +7,22 @@ import org.junit.Test
 class MoneyAnalyticsTest {
 
     @Test
-    fun authMapsToStartTrialWithThreeRupees() {
+    fun authMapsToPurchaseWithThreeRupees() {
         val event = MoneyAnalytics.forPaymentKind("AUTH")!!
-        assertEquals(AnalyticsEvents.START_TRIAL, event.eventName)
+        assertEquals(AnalyticsEvents.PURCHASE, event.eventName)
         assertEquals(3.0, event.value, 0.0)
         assertEquals("INR", event.currency)
     }
 
     @Test
-    fun chargeMapsToPurchaseWithFourHundredNinetyNine() {
-        val event = MoneyAnalytics.forPaymentKind("CHARGE")!!
-        assertEquals(AnalyticsEvents.PURCHASE, event.eventName)
-        assertEquals(499.0, event.value, 0.0)
-        assertEquals("INR", event.currency)
+    fun chargeIsNotTracked() {
+        assertNull(MoneyAnalytics.forPaymentKind("CHARGE"))
+        assertNull(MoneyAnalytics.forPaymentKind("charge"))
     }
 
     @Test
     fun kindIsCaseInsensitive() {
-        assertEquals(AnalyticsEvents.START_TRIAL, MoneyAnalytics.forPaymentKind("auth")!!.eventName)
-        assertEquals(AnalyticsEvents.PURCHASE, MoneyAnalytics.forPaymentKind("charge")!!.eventName)
+        assertEquals(AnalyticsEvents.PURCHASE, MoneyAnalytics.forPaymentKind("auth")!!.eventName)
     }
 
     @Test

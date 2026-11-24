@@ -19,6 +19,7 @@ import com.squarenova.emaanwallpapers.BuildConfig
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.analytics.MetaMatchDataRepository
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
 import com.squarenova.emaanwallpapers.data.LocalSession
@@ -120,6 +121,8 @@ private suspend fun resolveStartupRoute(
     if (phone.isNullOrBlank()) return SplashRoute.Login
 
     AnalyticsManager.identify(phone)
+    // Refresh Meta match keys for signed-in users (CAPI Purchase while app is closed).
+    MetaMatchDataRepository.saveAsync(context, phone)
 
     val cachedSubscribed = try {
         dataStoreManager.isSubscribed.first()

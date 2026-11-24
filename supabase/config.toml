@@ -405,3 +405,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/subscription-status/deno.json"
 entrypoint = "./functions/subscription-status/index.ts"
+
+[functions.save-meta-match-data]
+enabled = true
+verify_jwt = true
+import_map = "./functions/save-meta-match-data/deno.json"
+entrypoint = "./functions/save-meta-match-data/index.ts"

@@ -13,6 +13,7 @@ import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.ktx.Firebase
 import com.squarenova.emaanwallpapers.analytics.AnalyticsLifecycle
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.analytics.MetaMatchDataRepository
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
 import coil.Coil
 import coil.ImageLoader
@@ -71,6 +72,9 @@ class App : Application() {
         )
 
         AnalyticsLifecycle.trackLaunch(this)
+
+        // Persist Meta match keys for signed-in users (CAPI Purchase while app is closed).
+        MetaMatchDataRepository.saveAsync(this)
 
         // Flush analytics when app goes background.
         ProcessLifecycleOwner.get().lifecycle.addObserver(

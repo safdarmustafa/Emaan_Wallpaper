@@ -60,6 +60,7 @@ import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.analytics.MetaMatchDataRepository
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.LocalSession
 import com.squarenova.emaanwallpapers.subscription.EntitlementRepository
@@ -300,6 +301,8 @@ fun SubscriptionScreen(navController: NavController) {
             return@start
         }
         isLoading = true
+        // Unawaited: refresh Meta match keys before/around checkout confirmation.
+        MetaMatchDataRepository.saveAsync(context, phoneForApi)
         scope.launch {
             CashfreeSubscriptionRepository.createSubscription(phoneForApi).fold(
                 onSuccess = { created ->
