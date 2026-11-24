@@ -17,8 +17,8 @@ android {
         minSdk = 24
         targetSdk = 36
         // Meta match-data release: must be above anything already on Play.
-        versionCode = 18
-        versionName = "1.2.4"
+        versionCode = 19
+        versionName = "1.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
