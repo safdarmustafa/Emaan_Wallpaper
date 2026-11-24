@@ -32,6 +32,12 @@
 # Mixpanel / Facebook
 -dontwarn com.mixpanel.**
 -dontwarn com.facebook.**
+-keep class com.facebook.** { *; }
+-keep class com.facebook.appevents.** { *; }
+
+# Advertising ID (Meta CAPI madid)
+-keep class com.google.android.gms.ads.identifier.** { *; }
+-dontwarn com.google.android.gms.ads.identifier.**
 
 # EntitlementDebugLog is a Kotlin object (not Java static). Methods already
 # no-op when !BuildConfig.DEBUG, so no -assumenosideeffects needed here.

@@ -5,8 +5,8 @@
     <string name="splash_feature_reels">Islamic Reels &amp; Videos</string>
     <string name="splash_feature_ringtones">Islamic Ringtones &amp; Adhan</string>
     <string name="splash_feature_share">Share on WhatsApp</string>
+    <!-- Meta / Facebook SDK (Events Manager app dataset) -->
     <string name="facebook_app_id">1031255929862186</string>
-
     <string name="facebook_client_token">39a4c0ae5d207b2429b0bac59c71b1bb</string>
 
     <string name="language_title">Language</string>

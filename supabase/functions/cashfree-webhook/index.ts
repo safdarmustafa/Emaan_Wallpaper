@@ -303,7 +303,7 @@ Deno.serve(async (req) => {
     const { data: subscription, error: lookupError } = await supabase
       .from("subscriptions")
       .select(
-        "id, status, cashfree_subscription_id, plan_type, end_date, next_billing_date, last_payment_id, phone",
+        "id, user_id, status, cashfree_subscription_id, plan_type, end_date, next_billing_date, last_payment_id, phone",
       )
       .eq("cashfree_subscription_id", merchantSubscriptionId)
       .maybeSingle();
@@ -519,16 +519,20 @@ Deno.serve(async (req) => {
       status: updates.status,
     });
 
-    // After DB commit only: ₹3 AUTH → StartTrial, ₹499 CHARGE → Purchase.
+    // After DB commit only: ₹3 AUTH → Meta Purchase. ₹499 CHARGE → no analytics.
     // Never fail the webhook if analytics is down.
     if (analyticsKind && analyticsPaymentId) {
-      await trackMoneyAnalytics({
-        kind: analyticsKind,
-        paymentId: analyticsPaymentId,
-        phone: typeof subscription.phone === "string" ? subscription.phone : null,
-        subscriptionId: String(subscriptionRowId),
-        cashfreeSubscriptionId: merchantSubscriptionId,
-      });
+      await trackMoneyAnalytics(
+        {
+          kind: analyticsKind,
+          paymentId: analyticsPaymentId,
+          phone: typeof subscription.phone === "string" ? subscription.phone : null,
+          userId: typeof subscription.user_id === "string" ? subscription.user_id : null,
+          subscriptionId: String(subscriptionRowId),
+          cashfreeSubscriptionId: merchantSubscriptionId,
+        },
+        { serviceClient: supabase },
+      );
     }
 
     return successResponse("Webhook processed successfully.", {

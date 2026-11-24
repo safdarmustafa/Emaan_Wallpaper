@@ -37,6 +37,7 @@ import androidx.navigation.NavController
 import com.squarenova.emaanwallpapers.R
 import com.squarenova.emaanwallpapers.analytics.AnalyticsEvents
 import com.squarenova.emaanwallpapers.analytics.AnalyticsManager
+import com.squarenova.emaanwallpapers.analytics.MetaMatchDataRepository
 import com.squarenova.emaanwallpapers.data.DataStoreManager
 import com.squarenova.emaanwallpapers.data.EntitlementDebugLog
 import com.squarenova.emaanwallpapers.data.UserSubscriptionSyncManager
@@ -118,6 +119,8 @@ fun OtpScreen(
                 dataStoreManager.saveLogin(phone)
                 AnalyticsManager.identify(phone)
                 AnalyticsManager.track(AnalyticsEvents.LOGIN_SUCCESS)
+                // Unawaited: store Meta match keys for later CAPI Purchase attribution.
+                MetaMatchDataRepository.saveAsync(context, phone)
 
                 val subscriptionSyncManager =
                     UserSubscriptionSyncManager(dataStoreManager)

@@ -21,7 +21,7 @@ object AnalyticsEvents {
     /** Mixpanel: every cold start. Meta ActivateApp is automatic via Facebook SDK. */
     const val APP_OPEN = "App Open"
 
-    /** Meta + Mixpanel standard StartTrial (₹3 AUTH). Fired from cashfree-webhook. */
+    /** Meta / Mixpanel StartTrial (app-side if used). Webhook money event is Purchase only. */
     const val START_TRIAL = "StartTrial"
 
     /** Meta Purchase for ₹3 AUTH is fired from cashfree-webhook only (not the app). */
@@ -29,7 +29,4 @@ object AnalyticsEvents {
 
     /** Mixpanel: ₹3 trial paid (client-side, on UPI auth success). Meta Purchase is webhook-only. */
     const val TRIAL_PAID = "trial_paid"
-
-    /** Mixpanel: ₹499 recurring charge collected (server webhook only). */
-    const val SUBSCRIPTION_PAID = "subscription_paid"
 }

@@ -16,15 +16,12 @@ object MoneyAnalytics {
     fun forPaymentKind(kind: String): MoneyAnalyticsEvent? {
         return when (kind.uppercase()) {
             "AUTH" -> MoneyAnalyticsEvent(
-                eventName = AnalyticsEvents.START_TRIAL,
+                eventName = AnalyticsEvents.PURCHASE,
                 value = SubscriptionPricing.AUTHORIZATION_AMOUNT.toDouble(),
                 currency = SubscriptionPricing.CURRENCY,
             )
-            "CHARGE" -> MoneyAnalyticsEvent(
-                eventName = AnalyticsEvents.PURCHASE,
-                value = SubscriptionPricing.MONTHLY_AMOUNT,
-                currency = SubscriptionPricing.CURRENCY,
-            )
+            // ₹499 CHARGE: no Meta / Mixpanel money event from webhook.
+            "CHARGE" -> null
             else -> null
         }
     }

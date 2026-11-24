@@ -16,8 +16,9 @@ android {
         applicationId = "com.squarenova.emaanwallpapers"
         minSdk = 24
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.2.3"
+        // Meta match-data release: must be above anything already on Play.
+        versionCode = 18
+        versionName = "1.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -134,6 +135,8 @@ dependencies {
 
     // facebook sdk or meta sdk dependency
     implementation("com.facebook.android:facebook-android-sdk:18.3.0")
+    // Advertising ID for Meta CAPI madid match keys (server-side Purchase attribution)
+    implementation("com.google.android.gms:play-services-ads-identifier:18.2.0")
     // 🎨 Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
